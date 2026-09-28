@@ -1,8 +1,7 @@
 #include "Brisa.h"
 
-VideoBrisa::VideoBrisa(vector<Brisa*> *brisasParent) {
+VideoBrisa::VideoBrisa() {
     setup();
-    brisasAtivas = brisasParent;
     fboBrisa.allocate(WIDTH, HEIGHT);
     fboBrisa.begin();
     ofClear(0,0,0, 0);

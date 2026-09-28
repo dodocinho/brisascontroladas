@@ -1,9 +1,8 @@
 #include "FinderBrisa.h"
 
 // Class of Video Grabber to get input from cameras 
-FinderBrisa::FinderBrisa(vector<Brisa*> *brisasParent, vector<ImVec4> *coresPaleta) {
+FinderBrisa::FinderBrisa(vector<ImVec4> *coresPaleta) {
     setup();
-    brisasAtivas = brisasParent;
 
     mirrorHorizontal = mirrorVertical = false;
 

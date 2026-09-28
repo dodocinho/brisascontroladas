@@ -1,7 +1,5 @@
 #include "ofApp.h"
 
-vector<Brisa *> brisasAtivas;
-
 //--------------------------------------------------------------
 void ofApp::setup()
 {
@@ -16,8 +14,6 @@ void ofApp::setup()
 void ofApp::update()
 {
 
-    // Atualiza as brisas configuradas
-    brisasAtivas = gui->brisasAtivas;
     switch (gui->iBlend)
     {
     case 1:
@@ -41,11 +37,6 @@ void ofApp::update()
 
     ofEnableBlendMode(gui->blendMode);
 
-    if (FonteGlobalKinect::getInstance().getIsConnected())
-    {
-        FonteGlobalKinect::getInstance().update();
-    }
-
     if (gui->isRecording)
     {
         saveFrame();
@@ -57,8 +48,9 @@ void ofApp::draw()
 {
     ofBackground(0, 0, 0);
     ofEnableAntiAliasing();
-    // Me mostra essas brisa
-    for (int i = brisasAtivas.size() - 1; i >= 0; i--)
+    // Consulta a lista atual: a interface pode excluir camadas entre frames.
+    const auto &brisasAtivas = gui->getBrisas();
+    for (int i = static_cast<int>(brisasAtivas.size()) - 1; i >= 0; i--)
     {
         brisasAtivas[i]->draw();
     }
@@ -68,12 +60,7 @@ void ofApp::draw()
 //--------------------------------------------------------------
 void ofApp::exit()
 {
-    // Libera a memória das brisas
-    // Brisa vivida é brisa passada
-    for (vector<Brisa *>::iterator i = brisasAtivas.begin(); i != brisasAtivas.end(); ++i)
-    {
-        brisasAtivas.erase(i);
-    }
+
 }
 
 //--------------------------------------------------------------

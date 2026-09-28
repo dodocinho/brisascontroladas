@@ -1,18 +1,15 @@
 #include "MatrizBrisa.h"
 
-MatrizBrisa::MatrizBrisa(ofxKinect *kinectGlobal, vector<Brisa*> *brisasParent, vector<ImVec4> paletaGeral) {
+MatrizBrisa::MatrizBrisa(vector<ImVec4> paletaGeral) {
     setup();
     // Configura a brisa e defini o ícone
-    brisasAtivas = brisasParent;
-    camera = 1; // 0 = camera RGB (default) | 1 = camera Depth
 
     desenhaBlur = true;
     brightnessGray = 0.5;
     contrastGray = 0.95;
     intervaloX = 50;
 
-    fonteKinect = new FonteKinect(kinectGlobal, 2);
-    fonteKinect->setBlur(20);
+    processamento.setBlur(20);
 
     coresPaleta = paletaGeral;
     intercalaPontos = true;
@@ -20,16 +17,23 @@ MatrizBrisa::MatrizBrisa(ofxKinect *kinectGlobal, vector<Brisa*> *brisasParent, 
 }
 
 void MatrizBrisa::update( float dt ) {
-    fonteKinect->update(dt);
+    if (!processamento.update())
+    {
+        limpaFrame();
+        return;
+    }
     fboBrisa.begin();
 
     if (clearFrames) {
         ofClear(255,255,255, 0);
     }
-    intervaloY = (int)intervaloX*0.92;
+    intervaloX = std::max(2, intervaloX);
+    intervaloY = std::max(1, static_cast<int>(intervaloX * 0.92));
 
-    fonteKinect->pixelsBrisa.setImageType(OF_IMAGE_GRAYSCALE);
-    grayImage.setFromPixels(fonteKinect->pixelsBrisa);
+    ofPixels pixels = processamento.getPixels();
+    pixels.setImageType(OF_IMAGE_GRAYSCALE);
+    pixels.resize(fboBrisa.getWidth(), fboBrisa.getHeight());
+    grayImage.setFromPixels(pixels);
 
     grayPixels = grayImage.getPixels();
     int grayWidth = grayImage.getWidth();
@@ -52,7 +56,7 @@ void MatrizBrisa::update( float dt ) {
                 desenhaPonto(brilho, grayWidth, grayHeight, x, y+intervaloY/2, intervaloX, intervaloY);
             }
             //Coluna extra
-            brilho = (grayPixels[index]  + grayPixels[index-1] + grayPixels[index-2])/3;
+            brilho = (grayPixels[index]  + grayPixels[std::max(0, index-1)] + grayPixels[std::max(0, index-2)])/3;
             desenhaPonto(brilho, grayWidth, grayHeight, x, y+intervaloY/2, intervaloX, intervaloY);
         }
     }
@@ -70,7 +74,7 @@ void MatrizBrisa::update( float dt ) {
                 brilho = grayPixels[index] ;
                 desenhaPonto(brilho, grayWidth, grayHeight, x, y+intervaloY/2, intervaloX, intervaloY);
             }
-            brilho = (grayPixels[index]  + grayPixels[index-1] + grayPixels[index-2])/3;
+            brilho = (grayPixels[index]  + grayPixels[std::max(0, index-1)] + grayPixels[std::max(0, index-2)])/3;
             desenhaPonto(brilho, grayWidth, grayHeight, x, y+intervaloY/2, intervaloX, intervaloY);
         }
     }
@@ -93,11 +97,11 @@ void MatrizBrisa::desenhaPonto(int brilho, int width, int height, int x, int y, 
 
 void MatrizBrisa::desenhaColunas(int brilho, int width, int height, int x, int y, int gapX, int gapY) {
     int altura = brilho;
-    ofColor corPilar = coresPaleta[0];
-    ofColor corQuadrado = coresPaleta[1];
+    ofColor corPilar = coresPaleta.empty() ? ofColor::white : ofColor(coresPaleta[0]);
+    ofColor corQuadrado = coresPaleta.size() < 2 ? corPilar : ofColor(coresPaleta[1]);
     //corQuadrado.setBrightness(((float)x/width)*255);
     //corQuadrado.setHueAngle(((float)y/height)*360);
-    ofColor corBorda = coresPaleta[2];
+    ofColor corBorda = coresPaleta.size() < 3 ? ofColor::black : ofColor(coresPaleta[2]);
 
     ofColor corPilarEscuro = corPilar;
     corPilarEscuro.setBrightness(100); // Escurece o lado do pilar
@@ -138,7 +142,7 @@ void MatrizBrisa::desenhaColunas(int brilho, int width, int height, int x, int y
 }
 
 void MatrizBrisa::desenhaPixels(int brilho, int width, int height, int x,int y, int gapX, int gapY) {
-    if (brilho > 10) {
+    if (brilho > 10 && !coresPaleta.empty()) {
         // sorteia cor desse quadrado
         ofColor corQuad = coresPaleta[floor(ofRandom(0, coresPaleta.size()))];
         corQuad.setBrightness(brilho);
@@ -175,6 +179,6 @@ void MatrizBrisa::drawControles(int iBrisa) {
         }
     }
     
-    fonteKinect->drawControles();
-    fonteKinect->drawMiniatura();
+    processamento.drawControles();
+    processamento.drawMiniatura();
 }

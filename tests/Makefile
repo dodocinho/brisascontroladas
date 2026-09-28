@@ -1,0 +1,16 @@
+# Executar a partir da raiz: make -f tests/Makefile TestReleaseABI
+include Makefile
+
+TEST_BINARY = $(OF_PROJECT_OBJ_OUTPUT_PATH)tests/lifecycle
+TEST_OBJECT = $(OF_PROJECT_OBJ_OUTPUT_PATH)tests/lifecycle.o
+TEST_PROJECT_OBJECTS = $(filter-out %/src/main.o,$(OF_PROJECT_OBJS))
+
+.PHONY: TestReleaseABI
+TestReleaseABI: $(TEST_BINARY)
+
+$(TEST_OBJECT): tests/lifecycle.cpp $(wildcard src/Brisas/*.h src/Brisas/kinect/*.h) src/GuiApp.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(OPTIMIZATION_CFLAGS) $(CFLAGS) $(CXXFLAGS) $(PROJECT_INCLUDE_CFLAGS) -UNDEBUG -c $< -o $@
+
+$(TEST_BINARY): $(TEST_OBJECT) $(TEST_PROJECT_OBJECTS) $(OF_PROJECT_ADDONS_OBJS) $(OF_PROJECT_LIBS) $(TARGET_LIBS)
+	$(CXX) -o $@ $(OPTIMIZATION_LDFLAGS) $(TEST_OBJECT) $(TEST_PROJECT_OBJECTS) $(OF_PROJECT_ADDONS_OBJS) $(TARGET_LIBS) $(OF_PROJECT_LIBS) $(LDFLAGS) $(OF_CORE_LIBS)

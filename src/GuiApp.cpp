@@ -1,14 +1,16 @@
 #include "GuiApp.h"
 #include <vector>
+#include <memory>
 using namespace std;
 
-float t0, t1;
 
 void GuiApp::setup()
 {
     WindowManager::getInstance().setGuiWindowSize(ofGetWidth(), ofGetHeight());
 
-    gui.setup();
+    janelaRecursos = ofGetMainLoop()->getCurrentWindow();
+    gui = std::make_unique<ofxImGui::Gui>();
+    gui->setup(nullptr, false);
     ImGuiStyle &style = ImGui::GetStyle();
     style.WindowRounding = 5;
     // change the main color of buttons, headers, etc
@@ -17,20 +19,20 @@ void GuiApp::setup()
     // change the collapsed header style
     style.Colors[ImGuiCol_Header] = ImVec4(0.3, 0.0, 0.5, 1.0);
 
-    btnCriaColunas = gui.loadTexture("../data/img/icon/colunas.png");
-    btnCriaVideo = gui.loadTexture("../data/img/icon/video.png");
-    btnCriaPoligono = gui.loadTexture("../data/img/icon/poligon.png");
-    btnCriaKinect = gui.loadTexture("../data/img/icon/kinect.png");
-    btnCriaImg = gui.loadTexture("../data/img/icon/img.png");
-    btnCriaGif = gui.loadTexture("../data/img/icon/gif.png");
-    btnCriaMatriz = gui.loadTexture("../data/img/icon/matriz.png");
-    btnCriaSombras = gui.loadTexture("../data/img/icon/sombras.png");
-    btnCriaMandala = gui.loadTexture("../data/img/icon/mandala.png");
-    btnCriaBorda = gui.loadTexture("../data/img/icon/borda.png");
-    btnCriaKinectCam = gui.loadTexture("../data/img/icon/kinectcam.png");
-    btnCriaCamera = gui.loadTexture("../data/img/icon/camera.png");
-    btnCriaBody = gui.loadTexture("../data/img/icon/camera.png");
-    btnCriaFinder = gui.loadTexture("../data/img/icon/camera.png");
+    btnCriaColunas = gui->loadTexture("../data/img/icon/colunas.png");
+    btnCriaVideo = gui->loadTexture("../data/img/icon/video.png");
+    btnCriaPoligono = gui->loadTexture("../data/img/icon/poligon.png");
+    btnCriaKinect = gui->loadTexture("../data/img/icon/kinect.png");
+    btnCriaImg = gui->loadTexture("../data/img/icon/img.png");
+    btnCriaGif = gui->loadTexture("../data/img/icon/gif.png");
+    btnCriaMatriz = gui->loadTexture("../data/img/icon/matriz.png");
+    btnCriaSombras = gui->loadTexture("../data/img/icon/sombras.png");
+    btnCriaMandala = gui->loadTexture("../data/img/icon/mandala.png");
+    btnCriaBorda = gui->loadTexture("../data/img/icon/borda.png");
+    btnCriaKinectCam = gui->loadTexture("../data/img/icon/kinectcam.png");
+    btnCriaCamera = gui->loadTexture("../data/img/icon/camera.png");
+    btnCriaBody = gui->loadTexture("../data/img/icon/camera.png");
+    btnCriaFinder = gui->loadTexture("../data/img/icon/camera.png");
 
     ImGui::GetIO().MouseDrawCursor = false;
     desenhaMiniaturas = true;
@@ -45,29 +47,55 @@ void GuiApp::setup()
     depthClippingNear = 500;
 }
 
+void GuiApp::registraBrisa(std::unique_ptr<Brisa> brisa)
+{
+    camadas.adiciona(std::move(brisa));
+}
+
+void GuiApp::exit()
+{
+    if (encerrada) return;
+    // Libera os recursos gráficos enquanto há um contexto OpenGL disponível.
+    auto anterior = ofGetMainLoop()->getCurrentWindow();
+    auto janela = janelaRecursos.lock();
+    if (janela)
+    {
+        ofGetMainLoop()->setCurrentWindow(janela);
+        janela->makeCurrent();
+    }
+    camadas.clear();
+    brisaFocada = 0;
+    FonteGlobalKinect::getInstance().shutdown();
+    gui.reset();
+    encerrada = true;
+    if (anterior && anterior != janela)
+    {
+        ofGetMainLoop()->setCurrentWindow(anterior);
+        anterior->makeCurrent();
+    }
+}
+
 void GuiApp::update()
 {
-    // Quanto tempo passou desde o ultimo update?
-    // Resp = t1 - t0
-    t0 = t1;
-    t1 = ofGetElapsedTimef();
-    float dt = t1 - t0;
+    if (encerrada) return;
+    const float agora = ofGetElapsedTimef();
+    const float dt = agora - ultimoUpdate;
+    ultimoUpdate = agora;
 
-    // Atualiza as brisa tudo
-    for (int i = 0; i < brisasAtivas.size(); i++)
-    {
-        brisasAtivas[i]->update(dt);
-    }
+    auto &fonte = FonteGlobalKinect::getInstance();
+    fonte.setAngle(anguloKinect);
+    fonte.setDepthClipping(depthClippingNear, depthClippingFar);
+    fonte.update();
+    for (const auto &brisa : camadas.getBrisas()) brisa->update(dt);
 }
 
 void GuiApp::draw()
 {
+    if (encerrada) return;
     ofBackground(100, 100, 100);
 
-    gui.begin();
+    gui->begin();
 
-    // if the window is resized, update the size of the gui
-    ImVec2 currentWindowSize = ImGui::GetWindowSize();
 
     // Janela para adicionar brisas
     ImGui::SetNextWindowSize(ofVec2f(550, 380), ImGuiCond_Appearing);
@@ -77,33 +105,30 @@ void GuiApp::draw()
     ImGui::SetNextWindowPos(ofVec2f(1060, 2), ImGuiCond_FirstUseEver);
     UIControlesGerais();
 
-    // Me mostra essas brisa
-    for (int i = 0; i < brisasAtivas.size(); i++)
+    AcaoBrisa acao = AcaoBrisa::Nenhuma;
+    int i = 0;
+    for (const auto &brisa : camadas.getBrisas())
     {
-        if (desenhaMiniaturas)
-        {
-            bool focada = (i == iBrisaFocada);
-            brisasAtivas[i]->desenhaMiniatura(i, focada);
-        }
-        if (i == iBrisaFocada)
-        {
-            brisasAtivas[i]->desenhaJanela(i);
-        }
+        const bool focada = brisa->getId() == brisaFocada;
+        if (desenhaMiniaturas) brisa->desenhaMiniatura(i, focada);
+        if (focada) acao = brisa->desenhaJanela(i);
+        ++i;
     }
+    gui->end();
+    gui->draw();
 
-    for (int i = 0; i < timeline0.size(); i++)
+    // ImGui já consumiu as texturas deste frame. Agora é seguro destruir camadas.
+    if (acao == AcaoBrisa::Excluir)
     {
-        bool focada = false;
-        timeline0[i]->desenhaMiniatura(i, focada);
+        camadas.remove(brisaFocada);
+        brisaFocada = 0;
     }
-
-    ImGui::End();
-
-    gui.end();
+    else if (acao == AcaoBrisa::Frente) camadas.move(brisaFocada, -1);
+    else if (acao == AcaoBrisa::Tras) camadas.move(brisaFocada, 1);
 
     // Desenha as imagens do kinect
-    ofTexture depthTexture = FonteGlobalKinect::getInstance().getDepthTexture();
-    if (depthTexture.isAllocated() && FonteGlobalKinect::getInstance().getIsConnected())
+    const ofTexture &depthTexture = FonteGlobalKinect::getInstance().getDepthTexture();
+    if (depthTexture.isAllocated())
     {
         int widthMiniatura = 160;
         int heightMiniatura = 120;
@@ -114,8 +139,9 @@ void GuiApp::draw()
         depthTexture.draw(x, y, widthMiniatura, heightMiniatura);
 
         // draw the rgb texture
-        ofTexture rgbTexture = FonteGlobalKinect::getInstance().getRgbTexture();
-        rgbTexture.draw(x, y - 2 - heightMiniatura, widthMiniatura, heightMiniatura);
+        const ofTexture &rgbTexture = FonteGlobalKinect::getInstance().getRgbTexture();
+        if (rgbTexture.isAllocated())
+            rgbTexture.draw(x, y - 2 - heightMiniatura, widthMiniatura, heightMiniatura);
     }
 }
 
@@ -128,13 +154,6 @@ void GuiApp::UIControlesGerais()
 
     if (ImGui::CollapsingHeader("Kinect"))
     {
-        if (FonteGlobalKinect::getInstance().getIsConnected())
-        {
-            // Atualiza o angulo do kinect
-            FonteGlobalKinect::getInstance().setAngle(anguloKinect);
-            // Atualiza o corte de profundidade
-            FonteGlobalKinect::getInstance().setDepthClipping(depthClippingNear, depthClippingFar);
-        }
         // Botões de liga e desliga do kinect
         if (FonteGlobalKinect::getInstance().getIsConnected())
         {
@@ -254,75 +273,72 @@ void GuiApp::adicionaBrisa()
     if (criaColunas)
     {
         cout << "btn pressionado: criaColunas";
-        brisasAtivas.push_back(new Colunas());
+        registraBrisa(std::make_unique<Colunas>());
     }
     if (criaVideo)
     {
         cout << "btn pressionado: criaVideo";
-        brisasAtivas.push_back(new VideoBrisa(&brisasAtivas));
+        registraBrisa(std::make_unique<VideoBrisa>());
     }
     if (criaPoligono)
     {
         cout << "btn pressionado: criaPoligono";
-        brisasAtivas.push_back(new PoligonoBrisa(&brisasAtivas, &coresPaleta));
+        registraBrisa(std::make_unique<PoligonoBrisa>(coresPaleta));
     }
     if (criaKinect)
     {
         cout << "btn pressionado: criaKinect";
-        brisasAtivas.push_back(new KinectContornosBrisa());
+        registraBrisa(std::make_unique<KinectContornosBrisa>());
     }
     if (criaImg)
     {
         cout << "btn pressionado: criaImg";
-        brisasAtivas.push_back(new ImagemBrisa(&brisasAtivas));
+        registraBrisa(std::make_unique<ImagemBrisa>());
     }
     if (criaGif)
     {
         cout << "btn pressionado: criaGif";
-        brisasAtivas.push_back(new GifBrisa(&brisasAtivas));
+        registraBrisa(std::make_unique<GifBrisa>());
     }
     if (criaMatriz)
     {
         cout << "btn pressionado: criaMatriz";
-        brisasAtivas.push_back(new MatrizBrisa(&kinectGlobal, &brisasAtivas, coresPaleta));
+        registraBrisa(std::make_unique<MatrizBrisa>(coresPaleta));
     }
     if (criaSombras)
     {
         cout << "btn pressionado: criaSombras";
-        brisasAtivas.push_back(new SombraBrisa(&kinectGlobal, &brisasAtivas, &coresPaleta));
+        registraBrisa(std::make_unique<SombraBrisa>(coresPaleta));
     }
     if (criaKinectCam)
     {
         cout << "btn pressionado: criaKinectCam";
-        brisasAtivas.push_back(new KinectCamBrisa(&kinectGlobal, &brisasAtivas));
+        registraBrisa(std::make_unique<KinectCamBrisa>());
     }
     if (criaCamera)
     {
         cout << "btn pressionado: criaCamera";
-        brisasAtivas.push_back(new CameraBrisa(&brisasAtivas));
+        registraBrisa(std::make_unique<CameraBrisa>());
     }
-    // if (criaFinder) {
-    //     cout << "btn pressionado: criaBody";
-    //     // brisasAtivas.push_back(new FinderBrisa(&brisasAtivas, &coresPaleta));
-    // }
-    // if (criaBody) {
-    //     cout << "btn pressionado: criaBody";
-    //     // brisasAtivas.push_back(new BodyBrisa(&brisasAtivas, &coresPaleta));
-    // }
-
     ImGui::End();
 }
 
 void GuiApp::mousePressed(int x, int y, int iButton)
 {
-    int widthMiniatura = 160;
-    int heightMiniatura = 120;
-    int qtd = 4;
-    if (y < heightMiniatura * qtd && x < widthMiniatura)
+    if (encerrada || !gui || !desenhaMiniaturas || ImGui::GetIO().WantCaptureMouse)
     {
-        iBrisaFocada = floor((float)y / heightMiniatura);
-        cout << "\nx:" << x << " y:" << y << " btn:" << iButton;
-        cout << " - Brisa Focada: " << iBrisaFocada;
+        return;
+    }
+
+    for (int i = 0; i < static_cast<int>(camadas.getBrisas().size()); ++i)
+    {
+        const ofRectangle limites = Brisa::limitesMiniatura(i);
+        if (x >= limites.x && x < limites.getRight() &&
+            y >= limites.y && y < limites.getBottom())
+        {
+            brisaFocada = camadas.getBrisas()[i]->getId();
+            break;
+        }
     }
 }
 

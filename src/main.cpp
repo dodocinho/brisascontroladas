@@ -42,8 +42,8 @@ int main(){
 	settings.shareContextWith = mainWindow;
 	shared_ptr<ofAppBaseWindow> guiWindow = ofCreateWindow(settings);
 
-	shared_ptr<ofApp> mainApp(new ofApp);
-	shared_ptr<GuiApp> guiApp(new GuiApp);
+	auto mainApp = std::make_shared<ofApp>();
+	auto guiApp = std::make_shared<GuiApp>();
 
 	mainApp->gui = guiApp;
 	mainApp->window = mainWindow;

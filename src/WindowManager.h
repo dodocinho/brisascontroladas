@@ -1,5 +1,8 @@
 #pragma once
 
+// [agente de IA] Tamanho vivo das duas janelas. Brisa::setup e Brisa::draw
+// já consultam isto. GifBrisa e as constantes WIDTH/HEIGHT em Brisa.h
+// ainda desenham como se a projeção fosse sempre 1024x768.
 class WindowManager {
 public:
     static WindowManager& getInstance() {

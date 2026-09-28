@@ -1,8 +1,7 @@
 #include "SombraBrisa.h"
 
-SombraBrisa::SombraBrisa(ofxKinect *kinectGlobal, vector<Brisa*> *brisasParent, vector<ImVec4> *coresPaleta) {
+SombraBrisa::SombraBrisa(const vector<ImVec4> &coresPaleta) {
     setup();
-    brisasAtivas = brisasParent;
 
     mirrorHorizontal = mirrorVertical = false;
     desenhaBlur = true;
@@ -13,31 +12,34 @@ SombraBrisa::SombraBrisa(ofxKinect *kinectGlobal, vector<Brisa*> *brisasParent, 
     sombraHoriz = true;
     sombraVert = false;
 
-    int sizePaleta = coresPaleta->size();
-    int iCor1 = ofRandom(0, sizePaleta-1);
-    int iCor2 = ofRandom(0, sizePaleta-1);
-
-    // Caso as cores sejam iguais troca a segunda	
-    if (iCor1 == iCor2) {
-        iCor2 = iCor2 + 1 > sizePaleta ? iCor2 - 1 : iCor2 + 1;
+    corBrisa = ofFloatColor::white;
+    corComplementar = ofFloatColor::black;
+    if (!coresPaleta.empty())
+    {
+        const size_t iCor1 = static_cast<size_t>(ofRandom(coresPaleta.size()));
+        corBrisa = coresPaleta[iCor1];
+        corComplementar = coresPaleta[(iCor1 + 1) % coresPaleta.size()];
     }
-    corBrisa = coresPaleta->at(iCor1);
-    corComplementar = coresPaleta->at(iCor2);
 
-    fonteKinect = new FonteKinect(kinectGlobal, 2);
-    fonteKinect->setBlur(20);
+    processamento.setBlur(20);
 }
 
 void SombraBrisa::update( float dt ) {
-    fonteKinect->update(dt);
+    if (!processamento.update())
+    {
+        limpaFrame();
+        return;
+    }
     fboBrisa.begin();
 
     if (clearFrames) {
         ofClear(255,255,255, 0);
     }
 
-    fonteKinect->pixelsBrisa.setImageType(OF_IMAGE_GRAYSCALE);
-    grayImage.setFromPixels(fonteKinect->pixelsBrisa);
+    ofPixels pixels = processamento.getPixels();
+    pixels.setImageType(OF_IMAGE_GRAYSCALE);
+    pixels.resize(fboBrisa.getWidth(), fboBrisa.getHeight());
+    grayImage.setFromPixels(pixels);
 
     grayImage.mirror(mirrorVertical, mirrorHorizontal);
     grayImage.brightnessContrast(brightnessGray, contrastGray);
@@ -51,23 +53,23 @@ void SombraBrisa::update( float dt ) {
         blurGray.dilate_3x3();
         blurGray.blur(3);
     }
-    ofSetColor(corBrisa);
+    ofSetColor(ofFloatColor(corBrisa));
     blurGray.draw(0, 0, WIDTH, HEIGHT);
     // Desenha as sombras repetidas (efeito caleidoscopio)
     if (sombraHoriz || sombraVert) {
         ofEnableBlendMode(OF_BLENDMODE_ADD);
         if (sombraVert) {
-            ofSetColor(corComplementar);
+            ofSetColor(ofFloatColor(corComplementar));
             blurGray.mirror(true, false);
             blurGray.draw(0, 0, WIDTH, HEIGHT);
         }
         if (sombraHoriz) {
-            ofSetColor(corComplementar);
+            ofSetColor(ofFloatColor(corComplementar));
             blurGray.mirror(false, true);
             blurGray.draw(0, 0, WIDTH, HEIGHT);
         }
         if (sombraVert && sombraHoriz) {
-            ofSetColor(corBrisa);
+            ofSetColor(ofFloatColor(corBrisa));
             blurGray.mirror(true, false);
             blurGray.draw(0, 0, WIDTH, HEIGHT);
         }
@@ -94,6 +96,6 @@ void SombraBrisa::drawControles(int iBrisa) {
 
     ImGui::Checkbox("Limpa Frames", &clearFrames);
 
-    fonteKinect->drawControles();
-    fonteKinect->drawMiniatura();
+    processamento.drawControles();
+    processamento.drawMiniatura();
 }

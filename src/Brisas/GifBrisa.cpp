@@ -1,9 +1,7 @@
 #include "Brisa.h"
 
-GifBrisa::GifBrisa(vector<Brisa*> *brisasParent) {
+GifBrisa::GifBrisa() {
     setup();
-    brisasAtivas = brisasParent;
-    cout << brisasAtivas->size();
     fboBrisa.allocate(WIDTH, HEIGHT);
     fboBrisa.begin();
     ofClear(0,0,0, 0);
@@ -62,7 +60,6 @@ void GifBrisa::drawControles(int iBrisa)
   ImGui::SliderFloat("Proporcao", &proporcao, 0.2, 4);
   ImGui::SliderFloat("Rotação", &rotacao, -180, 180);
 
-  desenharControlesShader();
 }
 
 void GifBrisa::listaGifs()

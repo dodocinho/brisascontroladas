@@ -1,4 +1,5 @@
 #include "Brisa.h"
+#include "ColecaoBrisas.h"
 
 void Brisa::setup()
 {
@@ -8,6 +9,7 @@ void Brisa::setup()
     int height = WindowManager::getInstance().getMainWindowHeight();
 
     pixelsBrisa.allocate(width, height, OF_IMAGE_COLOR);
+    pixelsBrisa.set(0);
     fboBrisa.allocate(width, height, GL_RGBA);
     fboBrisa.begin();
     ofClear(0, 0, 0, 0);
@@ -18,7 +20,7 @@ void Brisa::setup()
 
     clearFrames = true;
 
-    iBrisaShader = 0;
+    brisaShader = 0;
 
     opacidade = 0;
     // Inicializa variaveis de distorções
@@ -27,6 +29,14 @@ void Brisa::setup()
     rotacao = 0;
     proporcao = 1;
     rotacionaSozinho = false;
+}
+
+void Brisa::limpaFrame()
+{
+    fboBrisa.begin();
+    ofClear(0, 0, 0, 0);
+    fboBrisa.end();
+    fboBrisa.readToPixels(pixelsBrisa);
 }
 
 void Brisa::update(float dt)
@@ -46,11 +56,11 @@ void Brisa::draw()
     if (ligaShader)
     {
         shaderBrisa.begin();
-        // Para pegar a textura de outra brisa
-        if (iBrisaShader > -1 && brisasAtivas->at(iBrisaShader)->fboBrisa.isAllocated())
-        {
-            shaderBrisa.setUniformTexture("texturaBrisaExterna", brisasAtivas->at(iBrisaShader)->fboBrisa.getTextureReference(), 1);
-        }
+        const Brisa *externa = colecao ? colecao->busca(brisaShader) : nullptr;
+        // Sem seleção, usa a própria textura e substitui qualquer binding anterior.
+        const ofTexture &textura = externa && externa->fboBrisa.isAllocated()
+            ? externa->fboBrisa.getTexture() : fboBrisa.getTexture();
+        shaderBrisa.setUniformTexture("texturaBrisaExterna", textura, 1);
         shaderBrisa.setUniformTexture("texture0", fboBrisa.getTextureReference(), 0);
         shaderBrisa.setUniform2f("resolution", fboBrisa.getWidth(), fboBrisa.getHeight());
     }
@@ -81,11 +91,20 @@ void Brisa::drawControles(int iBrisa)
     desenharControlesPosicao();
 }
 
+ofRectangle Brisa::limitesMiniatura(int i)
+{
+    return ofRectangle(0, i * (alturaMiniatura + bordaMiniatura * 2),
+                       larguraMiniatura + bordaMiniatura * 2,
+                       alturaMiniatura + bordaMiniatura * 2);
+}
+
 void Brisa::desenhaMiniatura(int i, bool ativa)
 {
-    int widthMiniatura = 160;
-    int heightMiniatura = 120;
-    int border = 2;
+    const ofRectangle limites = limitesMiniatura(i);
+    const float x = limites.x + bordaMiniatura;
+    const float y = limites.y + bordaMiniatura;
+    ofPushStyle();
+    ofFill();
     imgBtn.setFromPixels(pixelsBrisa);
     if (ativa)
     {
@@ -95,14 +114,15 @@ void Brisa::desenhaMiniatura(int i, bool ativa)
     {
         ofSetColor(30);
     }
-    ofRect(0, i * (heightMiniatura + border * 2), widthMiniatura + border * 2, heightMiniatura + border * 2);
+    ofDrawRectangle(limites);
     ofSetColor(0);
-    ofRect(2, i * (heightMiniatura + border * 2) + border, widthMiniatura, heightMiniatura);
+    ofDrawRectangle(x, y, larguraMiniatura, alturaMiniatura);
     ofSetColor(255);
-    imgBtn.draw(2, i * (heightMiniatura + border * 2) + border, widthMiniatura, heightMiniatura);
+    imgBtn.draw(x, y, larguraMiniatura, alturaMiniatura);
+    ofPopStyle();
 }
 
-void Brisa::desenhaJanela(int i)
+AcaoBrisa Brisa::desenhaJanela(int i)
 {
 
     std::ostringstream oss;
@@ -111,7 +131,8 @@ void Brisa::desenhaJanela(int i)
 
     ImGui::SetNextWindowSize(ofVec2f(500, 548), ImGuiCond_Once);
     ImGui::SetNextWindowPos(ofVec2f(210, 430), ImGuiCond_FirstUseEver);
-    string titulo = "Brisa #" + to_string(i + 1);
+    string titulo = "Brisa #" + to_string(i + 1) + "###brisa-" + to_string(id);
+    AcaoBrisa acao = AcaoBrisa::Nenhuma;
     ImGuiWindowFlags window_flags = 0;
     //  window_flags |= ImGuiWindowFlags_NoResize;
     window_flags |= ImGuiWindowFlags_NoCollapse;
@@ -124,49 +145,17 @@ void Brisa::desenhaJanela(int i)
 
     if (ImGui::Button("Trazer pra frente"))
     {
-        trazerFrente(i);
+        acao = AcaoBrisa::Frente;
     }
     ImGui::SameLine();
     if (ImGui::Button("Esconder pra trás"))
     {
-        esconderTras(i);
+        acao = AcaoBrisa::Tras;
     }
     desenharControlesShader();
-    if (ImGui::Button("Excluir Brisa"))
-    {
-        excluiBrisa(i);
-    }
-
+    if (ImGui::Button("Excluir Brisa")) acao = AcaoBrisa::Excluir;
     ImGui::End();
-}
-
-void Brisa::esconderTras(int iBrisa)
-{
-    if (iBrisa >= brisasAtivas->size() - 1)
-    {
-        std::iter_swap(brisasAtivas->begin() + iBrisa, brisasAtivas->begin());
-    }
-    else
-    {
-        std::iter_swap(brisasAtivas->begin() + iBrisa, brisasAtivas->begin() + iBrisa + 1);
-    }
-}
-
-void Brisa::trazerFrente(int iBrisa)
-{
-    if (iBrisa <= 0)
-    {
-        std::iter_swap(brisasAtivas->begin(), brisasAtivas->end() - 1);
-    }
-    else
-    {
-        std::iter_swap(brisasAtivas->begin() + iBrisa, brisasAtivas->begin() + iBrisa - 1);
-    }
-}
-
-void Brisa::excluiBrisa(int iBrisa)
-{
-    brisasAtivas->erase(brisasAtivas->begin() + iBrisa);
+    return acao;
 }
 
 void Brisa::loadShader(string shader)
@@ -178,18 +167,14 @@ void Brisa::loadShader(string shader)
 void Brisa::listaBrisas()
 {
 
-    int nBrisas = brisasAtivas->size();
-    if (ImGui::Selectable("Nenhuma"))
+    if (ImGui::Selectable("Nenhuma")) brisaShader = 0;
+    if (!colecao) return;
+    int i = 0;
+    for (const auto &brisa : colecao->getBrisas())
     {
-        iBrisaShader = -1;
-    }
-    for (int i = 0; i < nBrisas; i++)
-    {
-        string numBrisa = "Brisa #" + to_string(i + 1);
-        if (ImGui::Selectable(numBrisa.c_str()))
-        {
-            iBrisaShader = i;
-        }
+        string nome = "Brisa #" + to_string(++i);
+        if (ImGui::Selectable(nome.c_str(), brisaShader == brisa->getId()))
+            brisaShader = brisa->getId();
     }
 }
 
@@ -211,7 +196,17 @@ void Brisa::desenharControlesShader()
             listaShaders();
             ImGui::EndPopup();
         }
-        string numBrisa = "Brisa Shader: #" + to_string(iBrisaShader + 1);
+        string numBrisa = "Brisa Shader: nenhuma";
+        if (colecao)
+        {
+            int i = 0;
+            for (const auto &brisa : colecao->getBrisas())
+            {
+                ++i;
+                if (brisa->getId() == brisaShader)
+                    numBrisa = "Brisa Shader: #" + to_string(i);
+            }
+        }
         if (ImGui::Button(numBrisa.c_str()))
         {
             ImGui::OpenPopup("selectBrisa");

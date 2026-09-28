@@ -1,17 +1,15 @@
 #include "../Brisa.h"
+#include "ProcessamentoKinect.h"
 
 class MatrizBrisa : public Brisa {
 
-    ofxKinect *kinecto;
-    int camera;
 
     public:
-    MatrizBrisa(ofxKinect *kinectGlobal, vector<Brisa*> *brisasParent, vector<ImVec4> coresPaleta);
-    void draw();
-    void update(float dt);
+    MatrizBrisa(vector<ImVec4> coresPaleta);
+    void draw() override;
+    void update(float dt) override;
 
-    void desenhaMiniatura(int i);
-    void drawControles(int iBrisa);
+    void drawControles(int iBrisa) override;
     void desenhaPonto(int brilho, int width, int height, int x, int y, int gapX, int gapY);
     void desenhaPixels(int brilho, int width, int height, int x, int y, int gapX, int gapY);
     void desenhaColunas(int brilho, int width, int height, int x, int y, int gapX, int gapY);
@@ -25,5 +23,5 @@ class MatrizBrisa : public Brisa {
     vector<ImVec4> coresPaleta;
 
     ofxCvGrayscaleImage grayImage, blurGray;
-    FonteKinect* fonteKinect;
+    ProcessamentoKinect processamento{ProcessamentoKinect::Canal::Profundidade};
 };

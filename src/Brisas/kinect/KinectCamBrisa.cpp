@@ -1,23 +1,24 @@
 #include "KinectCamBrisa.h"
 
-KinectCamBrisa::KinectCamBrisa(ofxKinect *kinectGlobal, vector<Brisa*> *brisasParent) {
+KinectCamBrisa::KinectCamBrisa() {
     setup();
     // Configura a brisa e defini o ícone
-    brisasAtivas = brisasParent;
     mirrorHorizontal = mirrorVertical = false;
     clearFrames = true;
     nivelFade = 0;
     ofSetBackgroundAuto(false);
-    fonteKinect = new FonteKinect(kinectGlobal, 1);
     minArea = 10;
     maxArea = (640*480)/2; // (kinect_width*kinect_height)/2
     blobsConsiderados = 10;
     bFindHoles = false;
 }
 
-
 void KinectCamBrisa::update( float dt ) {
-    fonteKinect->update(dt);
+    if (!processamento.update())
+    {
+        limpaFrame();
+        return;
+    }
     fboBrisa.begin();
 
     if (clearFrames) {
@@ -27,7 +28,7 @@ void KinectCamBrisa::update( float dt ) {
         ofSetColor(255,255,255,255);
     }
 
-    fonteKinect->fboBrisa.draw(0,0);
+    processamento.draw(0, 0, fboBrisa.getWidth(), fboBrisa.getHeight());
     fboBrisa.end();
     fboBrisa.readToPixels(pixelsBrisa);
 }
@@ -48,7 +49,6 @@ void KinectCamBrisa::drawControles(int iBrisa) {
     ImGui::SliderInt("blobs", &blobsConsiderados, 0, 20);
 
     // draw fboBrisa to screen
-    fonteKinect->drawControles();
-    fonteKinect->drawMiniatura();
-    desenharControlesShader();
+    processamento.drawControles();
+    processamento.drawMiniatura();
 }

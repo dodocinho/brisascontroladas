@@ -1,10 +1,9 @@
 #include "CameraBrisa.h"
 
 // Class of Video Grabber to get input from cameras
-CameraBrisa::CameraBrisa(vector<Brisa *> *brisasParent)
+CameraBrisa::CameraBrisa()
 {
     setup();
-    brisasAtivas = brisasParent;
 
     mirrorHorizontal = mirrorVertical = false;
 

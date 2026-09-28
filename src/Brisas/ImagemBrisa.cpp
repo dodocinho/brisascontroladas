@@ -1,8 +1,7 @@
 #include "Brisa.h"
 
-ImagemBrisa::ImagemBrisa(vector<Brisa*> *brisasParent) {
+ImagemBrisa::ImagemBrisa() {
     Brisa::setup();
-    brisasAtivas = brisasParent;
     // Configura a brisa e defini o ícone
     fboBrisa.begin();
     ofClear(0,0,0, 0);
@@ -61,7 +60,6 @@ void ImagemBrisa::drawControles(int iBrisa) {
 
     ImGui::Checkbox("Converter pra p&b", &converterGray);
 
-    desenharControlesShader();
     Brisa::drawControles(iBrisa);
 }
 

@@ -7,14 +7,23 @@ const float HEIGHT = 768;
 #include "ofxImGui.h"
 // #include "ofxTensorFlow2.h"
 #include "ofxOpenCv.h"
-#include "ofxKinect.h"
+#include <cstdint>
 #include "ofxOsc.h"
 #include "../WindowManager.h"
 
+using BrisaId = std::uint64_t;
+class ColecaoBrisas;
+enum class AcaoBrisa { Nenhuma, Excluir, Frente, Tras };
+
+// GuiApp atualiza as camadas e desenha os controles; ofApp desenha a projeção.
 class Brisa
 {
 public:
-    vector<Brisa *> *brisasAtivas;
+    Brisa() = default;
+    virtual ~Brisa() = default;
+    Brisa(const Brisa &) = delete;
+    Brisa &operator=(const Brisa &) = delete;
+    BrisaId getId() const { return id; }
 
     string iconPath;
     GLuint btnConfigBrisa; // Botão pra mostrar as configs
@@ -26,18 +35,22 @@ public:
 
     ofShader shaderBrisa;
     string fragShaderPath;
-    int iBrisaShader;
+    BrisaId brisaShader = 0;
     bool ligaShader;
     bool clearFrames;
 
     virtual void setup();          // Configura brisa
     virtual void update(float dt); // Recalcula brisa
     virtual void draw();
+    void limpaFrame();
 
     virtual void drawControles(int iBrisa);
-    void excluiBrisa(int iBrisa);
     virtual void desenhaMiniatura(int i, bool focada);
-    void desenhaJanela(int i);
+    static constexpr int larguraMiniatura = 160;
+    static constexpr int alturaMiniatura = 120;
+    static constexpr int bordaMiniatura = 2;
+    static ofRectangle limitesMiniatura(int i);
+    AcaoBrisa desenhaJanela(int i);
 
     void listaShaders();
     void loadShader(string shader);
@@ -55,36 +68,10 @@ public:
     int fboWidth, fboHeight;
     int fboX, fboY;
 
-    void trazerFrente(int iBrisa), esconderTras(int iBrisa);
-};
-
-class FonteKinect : public Brisa
-{
-
-    ofxKinect *kinect;
-    int camera;
-    float angKinect;
-    float nivelFade;
-
-public:
-    FonteKinect(ofxKinect *kinectGlobal, int cameraSelecionada);
-    void setBlur(int novoBlur);
-    void draw() override;
-    void update(float dt);
-
-    void ligaKinect();
-    void desligaKinect();
-    int iBlurH, iBlur, iErode, iDilate;
-    int iRastro;
-
-    void drawControles();
-    void drawMiniatura();
-
-    bool mirrorHorizontal, mirrorVertical;
-    ofxCvGrayscaleImage grayImage;
-    ofVideoPlayer danceRGB, danceDepth;
-    ofxCvColorImage colorImage;
-    ofxCvFloatImage floatImage, floatColor;
+private:
+    friend class ColecaoBrisas;
+    BrisaId id = 0;
+    const ColecaoBrisas *colecao = nullptr; // Válida por toda a vida desta camada.
 };
 
 class VideoBrisa : public Brisa
@@ -92,7 +79,7 @@ class VideoBrisa : public Brisa
     float heightDraw, widthDraw, heightOrig, widthOrig;
 
 public:
-    VideoBrisa(vector<Brisa *> *brisasParent);
+    VideoBrisa();
     void draw() override;
     void update(float dt);
 
@@ -113,12 +100,14 @@ class GifBrisa : public Brisa
     float heightDraw, widthDraw, heightOrig, widthOrig;
 
 public:
-    GifBrisa(vector<Brisa *> *brisasParent);
+    GifBrisa();
     void draw() override;
     void update(float dt);
 
     ofVideoPlayer video;
     string caminhoVideo;
+    // TODO: Unificar com os membros da base. Os sliders locais usam estas cópias,
+    // mas Brisa::draw usa a transformação da base.
     float proporcao, rotacao;
     int deslocX, deslocY;
 
@@ -131,7 +120,7 @@ public:
 class ImagemBrisa : public Brisa
 {
 public:
-    ImagemBrisa(vector<Brisa *> *brisasParent);
+    ImagemBrisa();
     void draw() override;
     void update(float dt);
 
@@ -150,7 +139,7 @@ public:
 class PoligonoBrisa : public Brisa
 {
 public:
-    PoligonoBrisa(vector<Brisa *> *brisasParent, vector<ImVec4> *coresPaleta);
+    PoligonoBrisa(const vector<ImVec4> &coresPaleta);
     void draw() override;
     void update(float dt);
 

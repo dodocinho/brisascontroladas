@@ -1,9 +1,8 @@
 #include "Brisa.h"
 
-PoligonoBrisa::PoligonoBrisa(vector<Brisa*> *brisasParent, vector<ImVec4> *coresPaleta) {
+PoligonoBrisa::PoligonoBrisa(const vector<ImVec4> &coresPaleta) {
     setup();
     // Configura a brisa e define o ícone
-    brisasAtivas = brisasParent;
 
     vertices = 6;
     trocaVertices = true;
@@ -12,15 +11,14 @@ PoligonoBrisa::PoligonoBrisa(vector<Brisa*> *brisasParent, vector<ImVec4> *cores
     preencher = true;
     rotacionar = false;
 
-    int sizePaleta = coresPaleta->size();
-    int iCor1 = ofRandom(0, sizePaleta-1);
-    int iCor2 = ofRandom(0, sizePaleta-1);
-    // Caso as cores sejam iguais troca a segunda	
-    if (iCor1 == iCor2) {
-        iCor2 = iCor2+1 > sizePaleta ? iCor2-1 : iCor2+1;
+    corBrisa = ofFloatColor::white;
+    corComplementar = ofFloatColor::black;
+    if (!coresPaleta.empty())
+    {
+        const size_t iCor1 = static_cast<size_t>(ofRandom(coresPaleta.size()));
+        corBrisa = coresPaleta[iCor1];
+        corComplementar = coresPaleta[(iCor1 + 1) % coresPaleta.size()];
     }
-    corBrisa = coresPaleta->at(iCor1);
-    corComplementar = coresPaleta->at(iCor2);
 }
 
 void PoligonoBrisa::update( float dt ) {
@@ -36,9 +34,9 @@ void PoligonoBrisa::update( float dt ) {
     for (int i = quantidade; i > 0; i--) {
         cor1ou2 ^= 1;
         if( cor1ou2 ) {
-            ofSetColor(corBrisa);
+            ofSetColor(ofFloatColor(corBrisa));
         } else {
-            ofSetColor(corComplementar);
+            ofSetColor(ofFloatColor(corComplementar));
         }
         desenhaPoligono(abs(sin(time0*0.7-.3))*100 + i*distancia);
     }

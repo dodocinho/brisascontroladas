@@ -1,5 +1,5 @@
 #include "KinectContornosBrisa.h"
-#include "../FonteGlobalKinect.h"
+#include "FonteGlobalKinect.h"
 
 KinectContornosBrisa::KinectContornosBrisa()
 {
@@ -14,6 +14,12 @@ KinectContornosBrisa::KinectContornosBrisa()
 
 void KinectContornosBrisa::update(float dt)
 {
+    const auto &depth = FonteGlobalKinect::getInstance().getDepthPixels();
+    if (!depth.isAllocated())
+    {
+        limpaFrame();
+        return;
+    }
     fboBrisa.begin();
 
     if (clearFrames)
@@ -27,7 +33,7 @@ void KinectContornosBrisa::update(float dt)
 
     if (ligaContornos)
     {
-        grayImage.setFromPixels(FonteGlobalKinect::getInstance().getDepthPixels());
+        grayImage.setFromPixels(depth);
         contourFinder.findContours(grayImage, minArea, maxArea, blobsConsiderados, bFindHoles);
         contourFinder.draw(0, 0, fboBrisa.getWidth(), fboBrisa.getHeight());
     }

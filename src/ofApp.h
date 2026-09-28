@@ -2,7 +2,6 @@
 
 #include "ofMain.h"
 #include "ofxOpenCv.h"
-#include "ofxKinect.h"
 #include "GuiApp.h"
 #include "Brisas/Brisa.h"
 #include "ofxOsc.h"

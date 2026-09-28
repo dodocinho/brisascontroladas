@@ -5,7 +5,6 @@ class Colunas : public Brisa
 
 public:
   Colunas();
-  ~Colunas();
   void draw();
   void update(float dt);
 
@@ -17,7 +16,6 @@ public:
 
   vector<ImVec4> cores;
   cv::Mat blendedFrameMat; // Frame com o rastro
-  ofPixels kinectDepthPixels;
   ofImage blendedImage;
   ofFbo colunasFbo;
 

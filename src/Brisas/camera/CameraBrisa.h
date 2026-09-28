@@ -6,7 +6,7 @@
 class CameraBrisa : public Brisa {
 
     public:
-    CameraBrisa(vector<Brisa*> *brisasParent);
+    CameraBrisa();
     void draw();
     void update( float dt );
 

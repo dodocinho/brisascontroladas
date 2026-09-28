@@ -11,7 +11,6 @@ public:
     void drawControles(int iBrisa);
 
     float nivelFade = 20;
-    bool clearFrames = true;
     bool ligaContornos = true;
     bool bFindHoles = false;
     bool mirrorHorizontal, mirrorVertical;

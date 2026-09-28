@@ -6,7 +6,7 @@
 class BodyBrisa : public Brisa {
 
     public:
-    BodyBrisa(vector<Brisa*> *brisasParent, vector<ImVec4> *coresPaleta);
+    BodyBrisa(vector<ImVec4> *coresPaleta);
     void draw();
     void update( float dt );
 

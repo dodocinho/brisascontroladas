@@ -1,17 +1,15 @@
 #include "../Brisa.h"
+#include "ProcessamentoKinect.h"
 
 class SombraBrisa : public Brisa {
 
-    ofxKinect *kinecto;
-    int camera;
 
     public:
-    SombraBrisa(ofxKinect *kinectGlobal, vector<Brisa*> *brisasParent, vector<ImVec4> *coresPaleta);
-    void draw();
-    void update(float dt);
+    SombraBrisa(const vector<ImVec4> &coresPaleta);
+    void draw() override;
+    void update(float dt) override;
 
-    void desenhaMiniatura(int i);
-    void drawControles(int iBrisa);
+    void drawControles(int iBrisa) override;
     bool blurKinect, desenhaBlur, mirrorHorizontal, mirrorVertical;
     float brightnessGray, contrastGray;
     int iBlur;
@@ -21,5 +19,5 @@ class SombraBrisa : public Brisa {
 
     ofxCvGrayscaleImage grayImage, blurGray;
 
-    FonteKinect* fonteKinect;
+    ProcessamentoKinect processamento{ProcessamentoKinect::Canal::Profundidade};
 };

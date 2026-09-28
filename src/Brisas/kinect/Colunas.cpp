@@ -1,6 +1,6 @@
 
 #include "Colunas.h"
-#include "../FonteGlobalKinect.h"
+#include "FonteGlobalKinect.h"
 
 Colunas::Colunas()
 {
@@ -12,17 +12,7 @@ Colunas::Colunas()
   // black
   cores.push_back(ImVec4(0.0, 0.0, 0.0, 1.0));
 
-  // Aguarde até que o Kinect esteja conectado
-  while (!FonteGlobalKinect::getInstance().getIsConnected())
-  {
-    ofLogNotice("Colunas") << "Aguardando conexão do Kinect...";
-    FonteGlobalKinect::getInstance().ligaKinect();
-    ofSleepMillis(1000);
-  }
-  FonteGlobalKinect::getInstance().update(); // Ensure that the depth pixels are updated
-  kinectDepthPixels = FonteGlobalKinect::getInstance().getDepthPixels();
-  blendedImage.allocate(kinectDepthPixels.getWidth(), kinectDepthPixels.getHeight(), OF_IMAGE_COLOR);
-  colunasFbo.allocate(kinectDepthPixels.getWidth(), kinectDepthPixels.getHeight(), GL_RGBA);
+
 }
 
 void Colunas::drawColuna(int x, int y, float brilho)
@@ -72,14 +62,18 @@ void Colunas::update(float dt)
 
   Brisa::update(dt);
 
-  if (!FonteGlobalKinect::getInstance().getIsConnected())
+  const ofPixels &compartilhados = FonteGlobalKinect::getInstance().getDepthPixels();
+  if (!compartilhados.isAllocated())
   {
-    ofLogError("Colunas") << "O Kinect não está conectado!";
+    blendedFrameMat.release();
+    limpaFrame();
     return;
   }
-
-  // Obtenha a imagem de profundidade do Kinect
-  ofPixels depthPixels = FonteGlobalKinect::getInstance().getDepthPixels();
+  // OpenCV recebe uma cópia local; o frame compartilhado permanece imutável.
+  ofPixels depthPixels = compartilhados;
+  if (!colunasFbo.isAllocated() || colunasFbo.getWidth() != depthPixels.getWidth()
+      || colunasFbo.getHeight() != depthPixels.getHeight())
+      colunasFbo.allocate(depthPixels.getWidth(), depthPixels.getHeight(), GL_RGBA);
   cv::Mat cvMatImage(cv::Size(depthPixels.getWidth(), depthPixels.getHeight()), CV_8UC1, depthPixels.getData());
   cv::Mat cvBlurredImage;
 
@@ -87,7 +81,7 @@ void Colunas::update(float dt)
   cv::blur(cvMatImage, cvBlurredImage, cv::Size(blurSize, blurSize));
 
   // Inicialize blendedFrameMat com as mesmas dimensões e tipo que cvBlurredImage, se ainda não estiver configurado
-  if (blendedFrameMat.empty())
+  if (blendedFrameMat.empty() || blendedFrameMat.size() != cvBlurredImage.size())
   {
     blendedFrameMat = cv::Mat::zeros(cvBlurredImage.size(), cvBlurredImage.type());
   }
@@ -98,9 +92,9 @@ void Colunas::update(float dt)
   // Atualize o ofImage com o resultado misturado (blended)
   blendedImage.setFromPixels(blendedFrameMat.data, blendedFrameMat.cols, blendedFrameMat.rows, OF_IMAGE_GRAYSCALE); // Mantenha OF_IMAGE_GRAYSCALE para 1 canal
   blendedImage.update();
-  blendedImage.draw(0, 0, fboBrisa.getWidth(), fboBrisa.getHeight());
 
   colunasFbo.begin();
+  ofClear(0, 0, 0, 0);
   ofEnableSmoothing();
   ofSetColor(255, 255, 255, 255);
   ofFill();
@@ -118,7 +112,9 @@ void Colunas::update(float dt)
     // get 2 row to fill the gap
     for (int x = tamanhoColuna / 2; x < blendedImage.getWidth(); x += tamanhoColuna)
     {
-      float brightness = blendedImage.getColor(x, y + tamanhoColuna * 0.42).getBrightness();
+      int linha = std::min(static_cast<int>(blendedImage.getHeight()) - 1,
+                           static_cast<int>(y + tamanhoColuna * 0.42));
+      float brightness = blendedImage.getColor(x, linha).getBrightness();
       glEnable(GL_LINE_SMOOTH);
       drawColuna(x, y + tamanhoColuna * 0.42, brightness);
       glDisable(GL_LINE_SMOOTH);
@@ -154,9 +150,4 @@ void Colunas::drawControles(int iBrisa)
     ImGui::SliderInt("Desfoque", &blurSize, 1, 100);
     ImGui::SliderFloat("trailFactor", &trailFactor, 0.0, 1.0);
   }
-}
-
-Colunas::~Colunas()
-{
-  // Destrutor
 }

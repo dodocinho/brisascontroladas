@@ -8,7 +8,7 @@
 #   The location of your root openFrameworks installation
 #       (default) OF_ROOT = ../../.. 
 ################################################################################
-OF_ROOT = /Users/dodo/Documents/arte/of_v0.12.0_osx_release/
+# OF_ROOT = /Users/dodo/Documents/arte/of_v0.12.0_osx_release/
 
 ################################################################################
 # PROJECT ROOT
@@ -77,7 +77,7 @@ OF_ROOT = /Users/dodo/Documents/arte/of_v0.12.0_osx_release/
 # add a runtime path to search for those shared libraries, since they aren't 
 # incorporated directly into the final executable application binary.
 # TODO: should this be a default setting?
-# PROJECT_LDFLAGS=-Wl,-rpath=./libs
+PROJECT_LDFLAGS = -Wl,--disable-new-dtags -Wl,-rpath=$(OF_ROOT)/libs/opencv4/lib
 
 ################################################################################
 # PROJECT DEFINES

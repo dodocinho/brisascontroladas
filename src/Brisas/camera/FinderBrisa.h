@@ -6,7 +6,7 @@
 class FinderBrisa : public Brisa {
 
     public:
-    FinderBrisa(vector<Brisa*> *brisasParent, vector<ImVec4> *coresPaleta);
+    FinderBrisa(vector<ImVec4> *coresPaleta);
     void draw();
     void update( float dt );
 

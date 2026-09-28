@@ -2,19 +2,18 @@
 #define KINECTCAMBRISA_H__
 
 #include "../Brisa.h"
+#include "ProcessamentoKinect.h"
 
 class KinectCamBrisa : public Brisa {
 
     float nivelFade;
     public:
-    KinectCamBrisa(ofxKinect *kinectGlobal, vector<Brisa*> *brisasParent);
-    void draw();
-    void update( float dt );
+    KinectCamBrisa();
+    void draw() override;
+    void update(float dt) override;
 
-    // TODO: Remover?
-    void desenhaMiniatura(int i);
 
-    void drawControles(int iBrisa);
+    void drawControles(int iBrisa) override;
 
     bool mirrorHorizontal, mirrorVertical;
     bool bFindHoles;
@@ -22,7 +21,7 @@ class KinectCamBrisa : public Brisa {
     ofxCvContourFinder contourFinder;
     ofxCvGrayscaleImage grayImage;
 
-    FonteKinect* fonteKinect;
+    ProcessamentoKinect processamento{ProcessamentoKinect::Canal::Rgb};
 };
 
 #endif
