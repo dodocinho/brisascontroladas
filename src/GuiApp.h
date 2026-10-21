@@ -16,6 +16,7 @@
 
 #include "Brisas/kinect/FonteGlobalKinect.h"
 #include "kinect/Colunas.h"
+#include "TransmissorSrt.h"
 
 class GuiApp : public ofBaseApp
 {
@@ -41,6 +42,11 @@ public:
     void stopRecording();
     void setFrameCountRecorded(int frameCount);
     int framesRecorded = 0;
+
+    char ipMacSrt[64] = "192.168.1.4";
+    int portaSrt = 9494;
+    int latenciaSrtMs = TransmissorSrt::latenciaPadraoMs;
+    TransmissorSrt transmissor;
 
 
 

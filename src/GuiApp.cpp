@@ -1,4 +1,5 @@
 #include "GuiApp.h"
+#include <cstring>
 #include <vector>
 #include <memory>
 using namespace std;
@@ -54,6 +55,7 @@ void GuiApp::registraBrisa(std::unique_ptr<Brisa> brisa)
 
 void GuiApp::exit()
 {
+    transmissor.parar();
     if (encerrada) return;
     // Libera os recursos gráficos enquanto há um contexto OpenGL disponível.
     auto anterior = ofGetMainLoop()->getCurrentWindow();
@@ -101,7 +103,7 @@ void GuiApp::draw()
     ImGui::SetNextWindowSize(ofVec2f(550, 380), ImGuiCond_Appearing);
     adicionaBrisa();
 
-    ImGui::SetNextWindowSize(ofVec2f(250, 300), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ofVec2f(340, 560), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ofVec2f(1060, 2), ImGuiCond_FirstUseEver);
     UIControlesGerais();
 
@@ -219,6 +221,53 @@ void GuiApp::UIControlesGerais()
         {
             startRecording();
         }
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Transmissão SRT");
+
+    if (portaSrt < 1) portaSrt = 1;
+    if (portaSrt > 65535) portaSrt = 65535;
+
+    ImGui::InputText("IP do Mac", ipMacSrt, sizeof(ipMacSrt));
+    ImGui::InputInt("Porta", &portaSrt);
+    ImGui::SliderInt("Latência (ms)", &latenciaSrtMs, 5, 200);
+    if (ImGui::IsItemDeactivatedAfterEdit())
+        transmissor.ajustarLatencia(latenciaSrtMs);
+
+    const bool ligado = transmissor.estaLigado();
+    if (!ligado)
+    {
+        if (ImGui::Button("Transmitir composição"))
+        {
+            transmissor.solicitarInicio(ipMacSrt, portaSrt, latenciaSrtMs);
+        }
+    }
+    else if (ImGui::Button("Parar transmissão"))
+    {
+        transmissor.solicitarParada();
+    }
+
+    const int portaUrl = ligado ? transmissor.portaEmUso() : portaSrt;
+    const std::string urlTouch = transmissor.urlTouchDesigner(portaUrl, latenciaSrtMs);
+    char urlBuffer[512];
+    urlBuffer[0] = '\0';
+    std::strncat(urlBuffer, urlTouch.c_str(), sizeof(urlBuffer) - 1);
+    const float larguraUrl = ImGui::CalcTextSize(urlBuffer).x + ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().WindowPadding.x * 2 + 24;
+    if (ImGui::GetWindowWidth() < larguraUrl)
+        ImGui::SetWindowSize(ImVec2(larguraUrl, ImGui::GetWindowHeight()));
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##urlSrt", urlBuffer, sizeof(urlBuffer), ImGuiInputTextFlags_ReadOnly);
+
+    const FaseSrt fase = transmissor.fase();
+    if (ligado || fase == FaseSrt::Erro)
+    {
+        ImVec4 cor(0.85f, 0.85f, 0.85f, 1.0f);
+        if (fase == FaseSrt::Transmitindo) cor = ImVec4(0.45f, 0.9f, 0.5f, 1.0f);
+        else if (fase == FaseSrt::Aguardando) cor = ImVec4(0.95f, 0.8f, 0.35f, 1.0f);
+        else if (fase == FaseSrt::Erro) cor = ImVec4(1.0f, 0.45f, 0.4f, 1.0f);
+        const std::string estado = transmissor.status();
+        ImGui::TextColored(cor, "%s", estado.c_str());
     }
 }
 

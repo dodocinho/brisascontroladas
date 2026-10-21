@@ -1,5 +1,5 @@
 #include "../Brisa.h"
-
+#include "ProcessamentoKinect.h"
 class KinectContornosBrisa : public Brisa
 {
 
@@ -17,4 +17,7 @@ public:
     int minArea, maxArea, blobsConsiderados;
     ofxCvContourFinder contourFinder;
     ofxCvGrayscaleImage grayImage;
+    ofxCvGrayscaleImage bordas;
+
+    ProcessamentoKinect processamento{ProcessamentoKinect::Canal::Profundidade};
 };

@@ -32,5 +32,8 @@ public:
     shared_ptr<ofBaseGLRenderer> gl;
 
     void saveFrame();
+    void capturarEnvio();
     int frameCount = 0;
+    ofPixels quadroTransmissao;
+    ofPixels quadroCheio;
 };
