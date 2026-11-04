@@ -17,6 +17,9 @@
 #include "Brisas/kinect/FonteGlobalKinect.h"
 #include "kinect/Colunas.h"
 #include "TransmissorSrt.h"
+#include "RecordingTransfer.h"
+#include "SessionWebSocketClient.h"
+#include "SessionRecordingController.h"
 
 class GuiApp : public ofBaseApp
 {
@@ -37,13 +40,16 @@ public:
     const std::vector<std::unique_ptr<Brisa>> &getBrisas() const { return camadas.getBrisas(); }
     void windowResized(int w, int h);
     void UIControlesGerais();
+    void UIConexaoMac();
+    void UIGravacaoKinect();
     bool isRecording = false;
     void startRecording();
     void stopRecording();
     void setFrameCountRecorded(int frameCount);
     int framesRecorded = 0;
 
-    char ipMacSrt[64] = "192.168.1.4";
+    char ipMac[64] = "192.168.1.4";
+    std::string ipMacErro;
     int portaSrt = 9494;
     int latenciaSrtMs = TransmissorSrt::latenciaPadraoMs;
     TransmissorSrt transmissor;
@@ -75,6 +81,17 @@ public:
     bool desenhaMiniaturas;
 
 private:
+    KinectRecorder::Config recordingConfig;
+    RecordingTransfer recordingTransfer;
+    SessionWebSocketClient sessionWebSocket;
+    SessionWebSocketClient::Config sessionConfig;
+    SessionRecordingController sessionController;
+    RecordingTransfer::Config transferConfig;
+    std::string recordingConfigError;
+    void adotarIpDaSessao();
+    void aplicaIpMac();
+    void salvarUrlSessao();
+    void desenhaPreviaEFontesKinect();
     std::unique_ptr<ofxImGui::Gui> gui;
     std::weak_ptr<ofAppBaseWindow> janelaRecursos;
     ColecaoBrisas camadas;

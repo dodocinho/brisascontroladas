@@ -138,5 +138,12 @@ projectGenerator*/
 
 ## bin
 bin/brisasControladas2
+bin/brisascontroladas
 bin/libfmod.so
 
+# Capturas locais da composição e sessões do Kinect
+bin/data/recording/
+bin/data/recordings/
+
+# Configuração local (IP, pastas e integração). O modelo versionado é docs/kinect-recording.example.json
+bin/data/kinect-recording.json

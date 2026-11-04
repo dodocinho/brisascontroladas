@@ -140,3 +140,6 @@ PROJECT_LDFLAGS = -Wl,--disable-new-dtags -Wl,-rpath=$(OF_ROOT)/libs/opencv4/lib
 ################################################################################
 # PROJECT_CXX = 
 # PROJECT_CC = 
+
+# Native WebSocket client and canonical SHA-256 marker (system POCO).
+PROJECT_LDFLAGS += -lPocoNet -lPocoFoundation

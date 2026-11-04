@@ -6,6 +6,7 @@ class KinectContornosBrisa : public Brisa
 public:
     KinectContornosBrisa();
     void draw();
+    const ofTexture *previaAmpliada() const override;
     void update(float dt);
 
     void drawControles(int iBrisa);

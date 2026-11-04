@@ -87,6 +87,11 @@ void MatrizBrisa::draw() {
     Brisa::draw();
 }
 
+const ofTexture *MatrizBrisa::previaAmpliada() const
+{
+    return processamento.texturaPronta();
+}
+
 void MatrizBrisa::desenhaPonto(int brilho, int width, int height, int x, int y, int gapX, int gapY) {
     if (tipoMatriz == 1) {
         desenhaPixels(brilho, width, height, x, y, gapX, gapY);
@@ -180,5 +185,4 @@ void MatrizBrisa::drawControles(int iBrisa) {
     }
     
     processamento.drawControles();
-    processamento.drawMiniatura();
 }

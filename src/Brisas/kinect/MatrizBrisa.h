@@ -7,6 +7,7 @@ class MatrizBrisa : public Brisa {
     public:
     MatrizBrisa(vector<ImVec4> coresPaleta);
     void draw() override;
+    const ofTexture *previaAmpliada() const override;
     void update(float dt) override;
 
     void drawControles(int iBrisa) override;

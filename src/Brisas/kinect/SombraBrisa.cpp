@@ -85,6 +85,11 @@ void SombraBrisa::draw() {
     Brisa::draw();
 }
 
+const ofTexture *SombraBrisa::previaAmpliada() const
+{
+    return processamento.texturaPronta();
+}
+
 void SombraBrisa::drawControles(int iBrisa) {
     ImGui::ColorEdit4("Base", (float*)&corBrisa);
     ImGui::ColorEdit4("Complementar", (float*)&corComplementar);
@@ -97,5 +102,4 @@ void SombraBrisa::drawControles(int iBrisa) {
     ImGui::Checkbox("Limpa Frames", &clearFrames);
 
     processamento.drawControles();
-    processamento.drawMiniatura();
 }

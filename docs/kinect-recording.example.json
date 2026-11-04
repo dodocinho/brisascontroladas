@@ -1,0 +1,30 @@
+{
+  "output_root": "recordings",
+  "ffmpeg": "ffmpeg",
+  "fps": 30,
+  "rgb_kbps": 2500,
+  "depth_kbps": 1500,
+  "preset": "veryfast",
+  "depth_near_mm": 500,
+  "depth_far_mm": 4000,
+  "segment_seconds": 600,
+  "queue_frames": 8,
+  "transfer": {
+    "enabled": true,
+    "sshHost": "mephistopheles",
+    "remoteDirectory": "/Users/dodo/BrisasControladas/gravacoes",
+    "maxRetries": 10,
+    "retryIntervalSeconds": 30,
+    "bandwidthKbps": 2048
+  },
+  "thumbnail": {
+    "enabled": true,
+    "width": 320,
+    "timestampSeconds": 20
+  },
+  "corpoExpandido": {
+    "enabled": false,
+    "url": "ws://IP_DO_MEFISTOFELES:3000/api/v1/gravador/ws",
+    "tokenEnvironment": "BRISAS_GRAVADOR_TOKEN"
+  }
+}

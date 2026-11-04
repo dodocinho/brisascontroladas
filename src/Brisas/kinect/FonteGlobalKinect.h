@@ -2,6 +2,7 @@
 
 #include "ofMain.h"
 #include "ofxKinect.h"
+#include "KinectRecorder.h"
 #include <memory>
 
 // Captura única, atualizada por GuiApp antes das brisas, na thread principal.
@@ -17,6 +18,7 @@ public:
     void desligaKinect();
     void update();
     void shutdown();
+    KinectRecorder &getRecorder() { return recorder; }
     bool getIsConnected() const;
     void setAngle(int angle);
     void setDepthClipping(int near, int far);
@@ -33,6 +35,7 @@ private:
     void atualizaDemo();
     void abreCamera();
 
+    KinectRecorder recorder;
     std::unique_ptr<ofxKinect> kinect;
     std::unique_ptr<ofVideoPlayer> demoDepth, demoRgb;
     ofPixels depthPixels, rgbPixels;

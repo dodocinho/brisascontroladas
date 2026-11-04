@@ -37,6 +37,11 @@ void KinectCamBrisa::draw() {
     Brisa::draw();
 }
 
+const ofTexture *KinectCamBrisa::previaAmpliada() const
+{
+    return processamento.texturaPronta();
+}
+
 void KinectCamBrisa::drawControles(int iBrisa) {
     ImGui::Checkbox("Liga Fade", &clearFrames);
     if(clearFrames){
@@ -48,7 +53,5 @@ void KinectCamBrisa::drawControles(int iBrisa) {
     ImGui::SliderInt("max Area", &maxArea, 100, (640*480) );
     ImGui::SliderInt("blobs", &blobsConsiderados, 0, 20);
 
-    // draw fboBrisa to screen
     processamento.drawControles();
-    processamento.drawMiniatura();
 }

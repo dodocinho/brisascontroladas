@@ -46,6 +46,8 @@ public:
 
     virtual void drawControles(int iBrisa);
     virtual void desenhaMiniatura(int i, bool focada);
+    // Textura de ajuste (Kinect filtrado). Nulo desenha a própria brisa ampliada.
+    virtual const ofTexture *previaAmpliada() const { return nullptr; }
     static constexpr int larguraMiniatura = 160;
     static constexpr int alturaMiniatura = 120;
     static constexpr int bordaMiniatura = 2;

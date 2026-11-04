@@ -7,6 +7,7 @@ class SombraBrisa : public Brisa {
     public:
     SombraBrisa(const vector<ImVec4> &coresPaleta);
     void draw() override;
+    const ofTexture *previaAmpliada() const override;
     void update(float dt) override;
 
     void drawControles(int iBrisa) override;

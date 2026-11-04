@@ -68,6 +68,11 @@ void KinectContornosBrisa::draw()
     Brisa::draw();
 }
 
+const ofTexture *KinectContornosBrisa::previaAmpliada() const
+{
+    return processamento.texturaPronta();
+}
+
 void KinectContornosBrisa::drawControles(int iBrisa)
 {
     ImGui::Checkbox("Liga Fade", &clearFrames);
@@ -86,5 +91,4 @@ void KinectContornosBrisa::drawControles(int iBrisa)
     }
 
     processamento.drawControles();
-    processamento.drawMiniatura();
 }

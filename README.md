@@ -75,3 +75,31 @@ obj/linux64/Release/tests/lifecycle --gl
 ```
 
 A compilação e os testes de criação/exclusão, filtros, compartilhamento de frames e encerramento gráfico passaram nesta reorganização. A conexão USB e os controles físicos ainda precisam ser conferidos com um Kinect. O [guia de arquitetura](docs/arquitetura.md#validação) explica também como testar com vídeos de demonstração.
+
+## Gravar RGB + Depth do Kinect
+
+O painel **Gravação Kinect RGB + Depth** grava os dois canais em H.264/MP4,
+640×480, até 30 FPS, com segmentos de dez minutos e limite de 10 GB/quatro horas.
+A gravação usa filas limitadas e FFmpeg em segundo plano. O Depth é uma
+visualização quantizada em 8 bits; não preserva os dados originais sem perdas.
+
+Configuração inicial: `bin/data/kinect-recording.json`. Veja o
+[guia de gravação](docs/gravacao-kinect.md) para uso, sincronização no TouchDesigner,
+limitações e validação de uma sessão de dez minutos.
+
+Teste independente, sem Kinect ou janela gráfica:
+
+```sh
+bash tests/run_kinect_recorder.sh
+```
+
+A transferência automática de gravações Kinect para o Mac, com thumbnails,
+metadados e recuperação de falhas, está documentada em
+[docs/transferencia-kinect.md](docs/transferencia-kinect.md).
+
+## Integração com Corpo Expandido
+
+Controle automático autenticado por WebSocket POCO, vínculo explícito de sessão,
+manifesto v1 e publicação rsync confirmada por `.ready`, preservando a captura
+manual. Veja [configuração, arquitetura, recuperação e testes](docs/integracao-corpo-expandido.md).
+A integração vem desativada até configurar URL, token e destino do Mac.

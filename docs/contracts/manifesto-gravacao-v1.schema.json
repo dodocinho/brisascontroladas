@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Manifesto de gravacao Corpo Expandido / Brisas Controladas v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "gravacaoId",
+    "sessaoId",
+    "iniciadaEm",
+    "encerradaEm",
+    "arquivos"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "gravacaoId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "sessaoId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "iniciadaEm": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,3})?Z$"
+    },
+    "encerradaEm": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,3})?Z$"
+    },
+    "arquivos": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nome",
+          "tipo",
+          "tamanhoBytes"
+        ],
+        "properties": {
+          "nome": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:-[a-z0-9]{1,16})?\\.(?:mp4|jpg)$"
+          },
+          "tipo": {
+            "enum": [
+              "video",
+              "thumbnail"
+            ]
+          },
+          "tamanhoBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "tipo": {
+                  "const": "video"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "nome": {
+                  "pattern": "\\.mp4$"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "nome": {
+                  "pattern": "\\.jpg$"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "tipo": {
+                "const": "video"
+              }
+            }
+          },
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "tipo": {
+                "const": "thumbnail"
+              }
+            }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        }
+      ]
+    }
+  },
+  "$comment": "Validacao adicional no backend: UUID igual ao basename e ao prefixo de cada arquivo; nomes unicos; calendario valido e inicio < fim; sessao existente; marcador SHA-256; arquivos regulares sem links e tamanhos exatos; limite de 64 KiB."
+}

@@ -67,7 +67,11 @@ void FonteGlobalKinect::update()
 {
     if (encerrada) return;
     if (pedido == Pedido::Ligar) abreCamera();
-    if (pedido == Pedido::Desligar) kinect.reset();
+    if (pedido == Pedido::Desligar)
+    {
+        recorder.stop("kinect_disconnected");
+        kinect.reset();
+    }
     pedido = Pedido::Nenhum;
 
     bool conectada = getIsConnected();
@@ -80,6 +84,7 @@ void FonteGlobalKinect::update()
     }
     if (!conectada)
     {
+        recorder.stop("kinect_disconnected");
         atualizaDemo();
         return;
     }
@@ -90,6 +95,23 @@ void FonteGlobalKinect::update()
         configuraCamera = false;
     }
     kinect->update();
+    // ofxKinect uses FREENECT_DEPTH_REGISTERED (millimeters) with registration on.
+    // The addon discards hardware timestamps: this is host receipt time, shared
+    // by new images exposed in this update, not a claim of exposure-level sync.
+    const auto receivedNs = KinectRecorder::monotonicNs();
+    if (recorder.accepting())
+    {
+        if (kinect->isFrameNewDepth())
+        {
+            const auto &mm = kinect->getRawDepthPixels();
+            recorder.submitDepthMm(mm.getData(), mm.size(), receivedNs);
+        }
+        if (kinect->isFrameNewVideo())
+        {
+            const auto &rgb = kinect->getPixels();
+            recorder.submitRgb(rgb.getData(), rgb.size(), receivedNs);
+        }
+    }
     if (kinect->isFrameNewDepth())
     {
         depthPixels = kinect->getDepthPixels();
@@ -144,6 +166,7 @@ void FonteGlobalKinect::atualizaDemo()
 void FonteGlobalKinect::shutdown()
 {
     // Chamado antes de destruir as janelas: nenhum recurso GL fica no singleton.
+    recorder.shutdown();
     encerrada = true;
     pedido = Pedido::Nenhum;
     kinect.reset();

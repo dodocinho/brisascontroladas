@@ -10,6 +10,7 @@ class KinectCamBrisa : public Brisa {
     public:
     KinectCamBrisa();
     void draw() override;
+    const ofTexture *previaAmpliada() const override;
     void update(float dt) override;
 
 

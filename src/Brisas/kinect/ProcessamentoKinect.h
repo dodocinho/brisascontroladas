@@ -13,7 +13,7 @@ public:
     bool processa(const ofPixels &pixels);
     void draw(float x, float y, float width, float height);
     void drawControles();
-    void drawMiniatura();
+    const ofTexture *texturaPronta() const { return textura.isAllocated() ? &textura : nullptr; }
     void setBlur(int valor) { blur = valor; }
     const ofPixels &getPixels() const { return resultado; }
 

@@ -56,11 +56,6 @@ void ProcessamentoKinect::draw(float x, float y, float width, float height)
     if (textura.isAllocated()) textura.draw(x, y, width, height);
 }
 
-void ProcessamentoKinect::drawMiniatura()
-{
-    draw(ofGetWidth() - 318, ofGetHeight() - 241, 308, 231);
-}
-
 void ProcessamentoKinect::drawControles()
 {
     if (!ImGui::CollapsingHeader("Imagem Kinect")) return;

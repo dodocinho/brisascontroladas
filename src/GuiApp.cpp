@@ -1,8 +1,70 @@
 #include "GuiApp.h"
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 #include <memory>
 using namespace std;
+
+namespace
+{
+std::string hostDaUrl(const std::string &url)
+{
+    const auto esquema = url.find("://");
+    if (esquema == std::string::npos) return {};
+    const auto inicio = esquema + 3;
+    auto fim = url.find_first_of(":/", inicio);
+    if (fim == std::string::npos) fim = url.size();
+    return url.substr(inicio, fim - inicio);
+}
+
+std::string substituiHost(const std::string &url, const std::string &host)
+{
+    const auto esquema = url.find("://");
+    if (esquema == std::string::npos) return url;
+    const auto inicio = esquema + 3;
+    auto fim = url.find_first_of(":/", inicio);
+    if (fim == std::string::npos) fim = url.size();
+    return url.substr(0, inicio) + host + url.substr(fim);
+}
+
+bool ipValido(const std::string &ip)
+{
+    if (ip.empty() || ip.size() > 15) return false;
+    int numeros = 0;
+    int pontos = 0;
+    int grupo = -1;
+    for (char c : ip)
+    {
+        if (c == '.')
+        {
+            if (grupo < 0) return false;
+            ++pontos;
+            grupo = -1;
+            continue;
+        }
+        if (!std::isdigit(static_cast<unsigned char>(c))) return false;
+        if (grupo < 0)
+        {
+            grupo = c - '0';
+            ++numeros;
+        }
+        else
+        {
+            grupo = grupo * 10 + (c - '0');
+            if (grupo > 255) return false;
+        }
+    }
+    return pontos == 3 && numeros == 4 && grupo >= 0;
+}
+
+std::string limpaIp(std::string ip)
+{
+    ip.erase(std::remove_if(ip.begin(), ip.end(), [](unsigned char c) { return std::isspace(static_cast<unsigned char>(c)); }), ip.end());
+    return ip;
+}
+}
 
 
 void GuiApp::setup()
@@ -46,6 +108,50 @@ void GuiApp::setup()
     anguloKinect = 0;
     depthClippingFar = 2000;
     depthClippingNear = 500;
+    recordingConfig.outputRoot = ofToDataPath("recordings", true);
+    try
+    {
+        const auto path = ofToDataPath("kinect-recording.json", true);
+        if (ofFile::doesFileExist(path))
+        {
+            const auto config = ofLoadJson(path);
+            recordingConfig.fps = config.value("fps", recordingConfig.fps);
+            recordingConfig.rgbKbps = config.value("rgb_kbps", recordingConfig.rgbKbps);
+            recordingConfig.depthKbps = config.value("depth_kbps", recordingConfig.depthKbps);
+            recordingConfig.depthNearMm = config.value("depth_near_mm", recordingConfig.depthNearMm);
+            recordingConfig.depthFarMm = config.value("depth_far_mm", recordingConfig.depthFarMm);
+            recordingConfig.segmentSeconds = config.value("segment_seconds", recordingConfig.segmentSeconds);
+            recordingConfig.queueFrames = config.value("queue_frames", recordingConfig.queueFrames);
+            recordingConfig.preset = config.value("preset", recordingConfig.preset);
+            recordingConfig.ffmpeg = config.value("ffmpeg", recordingConfig.ffmpeg);
+            recordingConfig.outputRoot = ofToDataPath(config.value("output_root", std::string("recordings")), true);
+            const auto integration = config.value("corpoExpandido", ofJson::object());
+            sessionConfig.enabled = integration.value("enabled", false);
+            sessionConfig.url = integration.value("url", std::string());
+            sessionConfig.tokenEnvironment = integration.value("tokenEnvironment", sessionConfig.tokenEnvironment);
+            const auto transfer = config.value("transfer", ofJson::object());
+            transferConfig.enabled = transfer.value("enabled", transferConfig.enabled);
+            transferConfig.sshHost = transfer.value("sshHost", transferConfig.sshHost);
+            transferConfig.remoteDirectory = transfer.value("remoteDirectory", transferConfig.remoteDirectory);
+            transferConfig.maxRetries = transfer.value("maxRetries", transferConfig.maxRetries);
+            transferConfig.retryIntervalSeconds = transfer.value("retryIntervalSeconds", transferConfig.retryIntervalSeconds);
+            transferConfig.bandwidthKbps = transfer.value("bandwidthKbps", transferConfig.bandwidthKbps);
+            const auto thumbnail = config.value("thumbnail", ofJson::object());
+            transferConfig.thumbnailEnabled = thumbnail.value("enabled", transferConfig.thumbnailEnabled);
+            transferConfig.thumbnailWidth = thumbnail.value("width", transferConfig.thumbnailWidth);
+            transferConfig.thumbnailTimestampSeconds = thumbnail.value("timestampSeconds", transferConfig.thumbnailTimestampSeconds);
+        }
+    }
+    catch (const std::exception &e)
+    {
+        recordingConfigError = std::string("Erro em kinect-recording.json: ") + e.what();
+    }
+    adotarIpDaSessao();
+    if (recordingConfigError.empty()) {
+        recordingTransfer.start(recordingConfig.outputRoot, recordingConfig.ffmpeg, transferConfig);
+        sessionWebSocket.start(sessionConfig, recordingConfig.outputRoot);
+        if (sessionConfig.enabled) FonteGlobalKinect::getInstance().ligaKinect();
+    }
 }
 
 void GuiApp::registraBrisa(std::unique_ptr<Brisa> brisa)
@@ -67,7 +173,9 @@ void GuiApp::exit()
     }
     camadas.clear();
     brisaFocada = 0;
+    sessionWebSocket.shutdown();
     FonteGlobalKinect::getInstance().shutdown();
+    recordingTransfer.shutdown();
     gui.reset();
     encerrada = true;
     if (anterior && anterior != janela)
@@ -88,6 +196,11 @@ void GuiApp::update()
     fonte.setAngle(anguloKinect);
     fonte.setDepthClipping(depthClippingNear, depthClippingFar);
     fonte.update();
+    for (const auto &event : sessionWebSocket.drain()) {
+        sessionController.receive(event);
+        sessionController.update(fonte.getRecorder(), recordingConfig, fonte.getIsConnected());
+    }
+    sessionController.update(fonte.getRecorder(), recordingConfig, fonte.getIsConnected());
     for (const auto &brisa : camadas.getBrisas()) brisa->update(dt);
 }
 
@@ -118,6 +231,7 @@ void GuiApp::draw()
     }
     gui->end();
     gui->draw();
+    desenhaPreviaEFontesKinect();
 
     // ImGui já consumiu as texturas deste frame. Agora é seguro destruir camadas.
     if (acao == AcaoBrisa::Excluir)
@@ -127,24 +241,6 @@ void GuiApp::draw()
     }
     else if (acao == AcaoBrisa::Frente) camadas.move(brisaFocada, -1);
     else if (acao == AcaoBrisa::Tras) camadas.move(brisaFocada, 1);
-
-    // Desenha as imagens do kinect
-    const ofTexture &depthTexture = FonteGlobalKinect::getInstance().getDepthTexture();
-    if (depthTexture.isAllocated())
-    {
-        int widthMiniatura = 160;
-        int heightMiniatura = 120;
-        // bottom right
-        int x = ofGetWidth() - widthMiniatura - 2;
-        int y = ofGetHeight() - heightMiniatura - 2;
-        // draw the depth texture
-        depthTexture.draw(x, y, widthMiniatura, heightMiniatura);
-
-        // draw the rgb texture
-        const ofTexture &rgbTexture = FonteGlobalKinect::getInstance().getRgbTexture();
-        if (rgbTexture.isAllocated())
-            rgbTexture.draw(x, y - 2 - heightMiniatura, widthMiniatura, heightMiniatura);
-    }
 }
 
 void GuiApp::UIControlesGerais()
@@ -152,6 +248,8 @@ void GuiApp::UIControlesGerais()
     ImGui::Begin("Controles Gerais");
 
     ImGui::Text("%.1f FPS (%.3f ms/frame) ", ImGui::GetIO().Framerate, 1000.0f / ImGui::GetIO().Framerate);
+    UIConexaoMac();
+    ImGui::Separator();
     ImGui::Checkbox("Desenha miniaturas", &desenhaMiniaturas);
 
     if (ImGui::CollapsingHeader("Kinect"))
@@ -175,6 +273,8 @@ void GuiApp::UIControlesGerais()
             }
         }
     }
+
+    UIGravacaoKinect();
 
     if (ImGui::CollapsingHeader("Paleta de cores"))
     {
@@ -206,7 +306,8 @@ void GuiApp::UIControlesGerais()
     // Pula uma linha
     ImGui::NewLine();
 
-    // REC main screen
+    // Existing composition PNG capture remains a separate feature.
+    ImGui::Text("Captura PNG da composição");
     if (isRecording)
     {
         ImGui::Text("Recording... %d", framesRecorded);
@@ -225,11 +326,11 @@ void GuiApp::UIControlesGerais()
 
     ImGui::Separator();
     ImGui::Text("Transmissão SRT");
+    ImGui::Text("Destino: %s", ipMac);
 
     if (portaSrt < 1) portaSrt = 1;
     if (portaSrt > 65535) portaSrt = 65535;
 
-    ImGui::InputText("IP do Mac", ipMacSrt, sizeof(ipMacSrt));
     ImGui::InputInt("Porta", &portaSrt);
     ImGui::SliderInt("Latência (ms)", &latenciaSrtMs, 5, 200);
     if (ImGui::IsItemDeactivatedAfterEdit())
@@ -240,7 +341,7 @@ void GuiApp::UIControlesGerais()
     {
         if (ImGui::Button("Transmitir composição"))
         {
-            transmissor.solicitarInicio(ipMacSrt, portaSrt, latenciaSrtMs);
+            transmissor.solicitarInicio(ipMac, portaSrt, latenciaSrtMs);
         }
     }
     else if (ImGui::Button("Parar transmissão"))
@@ -269,6 +370,245 @@ void GuiApp::UIControlesGerais()
         const std::string estado = transmissor.status();
         ImGui::TextColored(cor, "%s", estado.c_str());
     }
+    ImGui::End();
+}
+
+void GuiApp::UIConexaoMac()
+{
+    ImGui::Separator();
+    ImGui::Text("Mac (Mephistopheles)");
+    ImGui::InputText("IP do Mac", ipMac, sizeof(ipMac));
+    if (ImGui::IsItemDeactivatedAfterEdit()) aplicaIpMac();
+    if (!ipMacErro.empty())
+        ImGui::TextColored(ImVec4(1.f, 0.45f, 0.4f, 1.f), "%s", ipMacErro.c_str());
+    ImGui::TextWrapped("Este IP é o destino da transmissão SRT e do WebSocket.");
+    if (sessionConfig.url.empty())
+        ImGui::TextDisabled("WebSocket não configurado.");
+    else
+        ImGui::TextWrapped("WebSocket: %s", sessionConfig.url.c_str());
+}
+
+void GuiApp::adotarIpDaSessao()
+{
+    const std::string host = hostDaUrl(sessionConfig.url);
+    if (!ipValido(host) || host == "127.0.0.1") return;
+    std::snprintf(ipMac, sizeof(ipMac), "%s", host.c_str());
+}
+
+void GuiApp::aplicaIpMac()
+{
+    const std::string ip = limpaIp(ipMac);
+    if (!ip.empty() && ip.size() < sizeof(ipMac))
+        std::snprintf(ipMac, sizeof(ipMac), "%s", ip.c_str());
+    if (!ipValido(ipMac))
+    {
+        ipMacErro = "IP inválido. Use quatro números, como 192.168.1.4.";
+        return;
+    }
+    ipMacErro.clear();
+    if (sessionConfig.url.empty()) return;
+
+    const std::string atualizada = substituiHost(sessionConfig.url, ipMac);
+    if (atualizada == sessionConfig.url) return;
+    sessionConfig.url = atualizada;
+    salvarUrlSessao();
+    if (sessionConfig.enabled && recordingConfigError.empty())
+        sessionWebSocket.start(sessionConfig, recordingConfig.outputRoot);
+}
+
+void GuiApp::salvarUrlSessao()
+{
+    const auto path = ofToDataPath("kinect-recording.json", true);
+    ofFile arquivo(path);
+    if (!arquivo.exists()) return;
+    arquivo.close();
+    std::string texto = ofBufferFromFile(path).getText();
+    const std::string chave = "\"url\"";
+    const auto pos = texto.find(chave);
+    if (pos == std::string::npos)
+    {
+        ofLogWarning("GuiApp") << "kinect-recording.json não tem url para atualizar";
+        return;
+    }
+    const auto colon = texto.find(':', pos + chave.size());
+    const auto abre = colon == std::string::npos ? std::string::npos : texto.find('"', colon + 1);
+    const auto fecha = abre == std::string::npos ? std::string::npos : texto.find('"', abre + 1);
+    if (fecha == std::string::npos)
+    {
+        ofLogWarning("GuiApp") << "Não foi possível atualizar a url em kinect-recording.json";
+        return;
+    }
+    texto.replace(abre + 1, fecha - abre - 1, sessionConfig.url);
+    ofFile saida;
+    if (!saida.open(path, ofFile::WriteOnly))
+    {
+        ofLogWarning("GuiApp") << "Não foi possível salvar " << path;
+        return;
+    }
+    saida << texto;
+}
+
+void GuiApp::UIGravacaoKinect()
+{
+    if (!ImGui::CollapsingHeader("Gravação Kinect RGB + Depth", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    auto &source = FonteGlobalKinect::getInstance();
+    auto &recorder = source.getRecorder();
+    const auto state = recorder.status();
+    const auto transfer = recordingTransfer.status();
+    const bool conectado = source.getIsConnected();
+
+    ImGui::Text("Kinect: %s", conectado ? "conectado" : "desconectado");
+    ImGui::Text("Modo: %s", sessionController.isAutomatic() ? "automático / Corpo Expandido" : "manual");
+    ImGui::TextWrapped("%s", sessionWebSocket.status().c_str());
+    if (!sessionController.status().empty())
+        ImGui::TextWrapped("%s", sessionController.status().c_str());
+    if (!recordingConfigError.empty())
+        ImGui::TextWrapped("%s", recordingConfigError.c_str());
+
+    if (state.active)
+    {
+        ImGui::TextColored(ImVec4(1.f, 0.35f, 0.35f, 1.f), "%s", state.message.c_str());
+        if (ImGui::Button("Parar gravação")) recorder.stop();
+    }
+    else if (recordingConfigError.empty())
+    {
+        if (!sessionController.manualStartAllowed())
+            ImGui::TextWrapped("Gravação reservada à sessão automática.");
+        else if (conectado)
+        {
+            if (ImGui::Button("Gravar Kinect")) recorder.start(recordingConfig);
+        }
+        else
+            ImGui::TextWrapped("Conecte o Kinect para gravar RGB + Depth.");
+        if (!state.message.empty()) ImGui::TextWrapped("%s", state.message.c_str());
+    }
+
+    if (state.active || state.bytes > 0)
+    {
+        const int elapsed = static_cast<int>(state.seconds);
+        ImGui::Text("Tempo: %02d:%02d:%02d  |  %.3f GB / 10 GB", elapsed / 3600,
+                    (elapsed / 60) % 60, elapsed % 60, state.bytes / 1e9);
+    }
+    if (!state.error.empty())
+        ImGui::TextColored(ImVec4(1.f, 0.4f, 0.3f, 1.f), "%s", state.error.c_str());
+    if (!transfer.error.empty())
+        ImGui::TextWrapped("Último erro: %s", transfer.error.c_str());
+
+    ImGui::Text("Transferências: %llu pendentes, %llu concluídas, %llu com falha",
+                static_cast<unsigned long long>(transfer.pending),
+                static_cast<unsigned long long>(transfer.completed),
+                static_cast<unsigned long long>(transfer.failed));
+    if (recordingConfigError.empty() && (transfer.failed > 0 || transfer.pending > 0))
+    {
+        if (ImGui::Button("Tentar transferências novamente")) recordingTransfer.retryFailed();
+    }
+
+    if (ImGui::CollapsingHeader("Mais informações"))
+    {
+        if (state.active)
+        {
+            ImGui::Text("FPS %d | RGB %d kb/s | Depth %d kb/s",
+                        recordingConfig.fps, recordingConfig.rgbKbps, recordingConfig.depthKbps);
+            ImGui::Text("Profundidade %d a %d mm", recordingConfig.depthNearMm, recordingConfig.depthFarMm);
+        }
+        else if (recordingConfigError.empty())
+        {
+            ImGui::SliderInt("FPS gravação", &recordingConfig.fps, 1, 30);
+            ImGui::InputInt("RGB kb/s", &recordingConfig.rgbKbps);
+            ImGui::InputInt("Depth kb/s", &recordingConfig.depthKbps);
+            ImGui::InputInt("Depth perto (mm)", &recordingConfig.depthNearMm);
+            ImGui::InputInt("Depth longe (mm)", &recordingConfig.depthFarMm);
+        }
+        ImGui::Text("Descartados RGB/Depth: %llu / %llu",
+                    static_cast<unsigned long long>(state.droppedRgb),
+                    static_cast<unsigned long long>(state.droppedDepth));
+        ImGui::Text("Repetidos RGB/Depth: %llu / %llu",
+                    static_cast<unsigned long long>(state.repeatedRgb),
+                    static_cast<unsigned long long>(state.repeatedDepth));
+        if (!state.directory.empty()) ImGui::TextWrapped("%s", state.directory.c_str());
+        if (!transfer.message.empty()) ImGui::TextWrapped("%s", transfer.message.c_str());
+        if (recordingConfigError.empty() && transfer.failed == 0 && transfer.pending == 0)
+        {
+            if (ImGui::Button("Tentar transferências novamente")) recordingTransfer.retryFailed();
+        }
+    }
+}
+
+void GuiApp::desenhaPreviaEFontesKinect()
+{
+    glDisable(GL_SCISSOR_TEST);
+    ofDisableDepthTest();
+    ofEnableAlphaBlending();
+
+    const float margem = 8.f;
+    const float fonteW = 160.f;
+    const float fonteH = 120.f;
+    const float previaW = 308.f;
+    const float previaH = 231.f;
+    const float coluna = Brisa::larguraMiniatura + Brisa::bordaMiniatura * 2.f;
+
+    const float larguraTela = static_cast<float>(ofGetWidth());
+    const float alturaTela = static_cast<float>(ofGetHeight());
+    const float kinectX = std::max(coluna + margem, larguraTela - margem - fonteW);
+    const float depthY = std::max(margem, alturaTela - margem - fonteH);
+    const float rgbY = std::max(margem, depthY - 4.f - fonteH);
+    const ofRectangle blocoKinect(kinectX, rgbY, fonteW, depthY + fonteH - rgbY);
+
+    if (desenhaMiniaturas && brisaFocada != 0)
+    {
+        Brisa *focada = nullptr;
+        int indice = 0;
+        int indiceFocada = -1;
+        for (const auto &brisa : camadas.getBrisas())
+        {
+            if (brisa->getId() == brisaFocada)
+            {
+                focada = brisa.get();
+                indiceFocada = indice;
+                break;
+            }
+            ++indice;
+        }
+        const ofTexture *tex = focada ? focada->previaAmpliada() : nullptr;
+        const bool temImagem = focada && (tex || focada->imgBtn.isAllocated());
+        if (temImagem)
+        {
+            float x = kinectX - margem - previaW;
+            float y = alturaTela - margem - previaH;
+            if (x < coluna + margem)
+            {
+                x = std::max(coluna + margem, larguraTela - margem - previaW);
+                y = rgbY - margem - previaH;
+            }
+            x = std::max(coluna + margem, x);
+            y = std::max(margem, y);
+            if (ofRectangle(x, y, previaW, previaH).intersects(blocoKinect))
+                y = std::max(margem, rgbY - margem - previaH);
+
+            ofPushStyle();
+            ofSetColor(205, 100, 100);
+            ofDrawRectangle(x - 2, y - 2, previaW + 4, previaH + 4);
+            ofSetColor(255);
+            if (tex) tex->draw(x, y, previaW, previaH);
+            else focada->imgBtn.draw(x, y, previaW, previaH);
+            const std::string rotulo = (tex ? "Kinect da brisa #" : "Brisa #") + ofToString(indiceFocada + 1);
+            ofDrawBitmapStringHighlight(rotulo, x + 6, y + 16, ofColor(0, 0, 0, 170), ofColor(255));
+            ofPopStyle();
+        }
+    }
+
+    auto &fonte = FonteGlobalKinect::getInstance();
+    auto desenhaFonte = [&](const ofTexture &textura, float y, const char *nome)
+    {
+        if (!textura.isAllocated()) return;
+        ofPushStyle();
+        ofSetColor(255);
+        textura.draw(kinectX, y, fonteW, fonteH);
+        ofDrawBitmapStringHighlight(nome, kinectX + 4, y + 14, ofColor(0, 0, 0, 170), ofColor(255));
+        ofPopStyle();
+    };
+    desenhaFonte(fonte.getRgbTexture(), rgbY, "Kinect RGB");
+    desenhaFonte(fonte.getDepthTexture(), depthY, "Kinect profundidade");
 }
 
 void GuiApp::setFrameCountRecorded(int frameCount)
