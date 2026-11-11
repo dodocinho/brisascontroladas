@@ -1,6 +1,7 @@
 #pragma once
 // Linux persistence and contract primitives shared by recorder, protocol and transfer.
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <Poco/SHA2Engine.h>
 #include <filesystem>
 #include <fstream>
@@ -13,6 +14,11 @@
 namespace integration {
 using Json = nlohmann::json;
 namespace fs = std::filesystem;
+// Session identifiers are opaque metadata, never paths or shell arguments.
+inline bool sessionIdValid(const std::string &s) {
+    return !s.empty() && s.size() <= 256 &&
+        std::none_of(s.begin(), s.end(), [](unsigned char c) { return c < 32 || c == 127; });
+}
 inline bool uuidValid(const std::string &s) {
     static const std::regex p("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
     return std::regex_match(s, p);

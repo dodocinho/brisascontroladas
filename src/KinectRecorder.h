@@ -15,6 +15,7 @@ public:
         std::string outputRoot = "recordings";
         // Empty for manual captures; immutable canonical identity for automatic captures.
         std::string recordingId, sessionId;
+        std::string sessionMetadata; // validated web session, immutable per capture
         std::string ffmpeg = "ffmpeg";
         std::string preset = "veryfast";
         int fps = 30;
@@ -29,6 +30,7 @@ public:
     struct Status
     {
         bool active = false, accepting = false;
+        int depthNearMm = 0, depthFarMm = 0; // range captured at start(), also in session.json
         double seconds = 0;
         uint64_t bytes = 0, frames = 0;
         uint64_t droppedRgb = 0, droppedDepth = 0;

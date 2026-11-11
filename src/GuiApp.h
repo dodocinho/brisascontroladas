@@ -81,11 +81,13 @@ public:
     bool desenhaMiniaturas;
 
 private:
+    void sincronizarClippingGravacao();
     KinectRecorder::Config recordingConfig;
     RecordingTransfer recordingTransfer;
     SessionWebSocketClient sessionWebSocket;
     SessionWebSocketClient::Config sessionConfig;
     SessionRecordingController sessionController;
+    float proximoEstadoSessao = 0;
     RecordingTransfer::Config transferConfig;
     std::string recordingConfigError;
     void adotarIpDaSessao();

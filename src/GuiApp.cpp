@@ -109,6 +109,7 @@ void GuiApp::setup()
     depthClippingFar = 2000;
     depthClippingNear = 500;
     recordingConfig.outputRoot = ofToDataPath("recordings", true);
+    std::string srtHost;
     try
     {
         const auto path = ofToDataPath("kinect-recording.json", true);
@@ -118,8 +119,6 @@ void GuiApp::setup()
             recordingConfig.fps = config.value("fps", recordingConfig.fps);
             recordingConfig.rgbKbps = config.value("rgb_kbps", recordingConfig.rgbKbps);
             recordingConfig.depthKbps = config.value("depth_kbps", recordingConfig.depthKbps);
-            recordingConfig.depthNearMm = config.value("depth_near_mm", recordingConfig.depthNearMm);
-            recordingConfig.depthFarMm = config.value("depth_far_mm", recordingConfig.depthFarMm);
             recordingConfig.segmentSeconds = config.value("segment_seconds", recordingConfig.segmentSeconds);
             recordingConfig.queueFrames = config.value("queue_frames", recordingConfig.queueFrames);
             recordingConfig.preset = config.value("preset", recordingConfig.preset);
@@ -129,6 +128,12 @@ void GuiApp::setup()
             sessionConfig.enabled = integration.value("enabled", false);
             sessionConfig.url = integration.value("url", std::string());
             sessionConfig.tokenEnvironment = integration.value("tokenEnvironment", sessionConfig.tokenEnvironment);
+            const auto tokenFile = integration.value("tokenFile", std::string());
+            if (!tokenFile.empty()) sessionConfig.tokenFile = ofToDataPath(tokenFile, true);
+            const auto srt = config.value("srt", ofJson::object());
+            srtHost = srt.value("host", std::string());
+            portaSrt = srt.value("port", portaSrt);
+            latenciaSrtMs = srt.value("latencyMs", latenciaSrtMs);
             const auto transfer = config.value("transfer", ofJson::object());
             transferConfig.enabled = transfer.value("enabled", transferConfig.enabled);
             transferConfig.sshHost = transfer.value("sshHost", transferConfig.sshHost);
@@ -147,6 +152,10 @@ void GuiApp::setup()
         recordingConfigError = std::string("Erro em kinect-recording.json: ") + e.what();
     }
     adotarIpDaSessao();
+    if (!srtHost.empty()) {
+        if (ipValido(srtHost)) std::snprintf(ipMac, sizeof(ipMac), "%s", srtHost.c_str());
+        else recordingConfigError = "srt.host deve ser o IPv4 do Mac";
+    }
     if (recordingConfigError.empty()) {
         recordingTransfer.start(recordingConfig.outputRoot, recordingConfig.ffmpeg, transferConfig);
         sessionWebSocket.start(sessionConfig, recordingConfig.outputRoot);
@@ -195,12 +204,19 @@ void GuiApp::update()
     auto &fonte = FonteGlobalKinect::getInstance();
     fonte.setAngle(anguloKinect);
     fonte.setDepthClipping(depthClippingNear, depthClippingFar);
-    fonte.update();
     for (const auto &event : sessionWebSocket.drain()) {
         sessionController.receive(event);
-        sessionController.update(fonte.getRecorder(), recordingConfig, fonte.getIsConnected());
     }
+    if (sessionController.takeCaptureRequest() && !fonte.getIsConnected()) fonte.ligaKinect();
+    fonte.update();
+    sincronizarClippingGravacao();
     sessionController.update(fonte.getRecorder(), recordingConfig, fonte.getIsConnected());
+    sessionController.updateStreaming(transmissor, fonte.getIsConnected(), ipMac, portaSrt, latenciaSrtMs);
+    if (sessionConfig.enabled && agora >= proximoEstadoSessao) {
+        proximoEstadoSessao = agora + 0.2f;
+        sessionWebSocket.publishState(sessionController.deviceState(fonte.getRecorder().status(),
+            fonte.getIsConnected(), transmissor.fase() == FaseSrt::Transmitindo, transmissor.erro()));
+    }
     for (const auto &brisa : camadas.getBrisas()) brisa->update(dt);
 }
 
@@ -341,13 +357,17 @@ void GuiApp::UIControlesGerais()
     {
         if (ImGui::Button("Transmitir composição"))
         {
+            sessionController.manualStreamingOverride();
             transmissor.solicitarInicio(ipMac, portaSrt, latenciaSrtMs);
         }
     }
     else if (ImGui::Button("Parar transmissão"))
     {
+        sessionController.manualStreamingOverride();
         transmissor.solicitarParada();
     }
+    if (ligado && sessionController.ownsStreaming() && ImGui::Button("Manter transmissão após sessão"))
+        sessionController.manualStreamingOverride();
 
     const int portaUrl = ligado ? transmissor.portaEmUso() : portaSrt;
     const std::string urlTouch = transmissor.urlTouchDesigner(portaUrl, latenciaSrtMs);
@@ -448,6 +468,14 @@ void GuiApp::salvarUrlSessao()
     saida << texto;
 }
 
+void GuiApp::sincronizarClippingGravacao()
+{
+    // Keep the same normalization as FonteGlobalKinect::setDepthClipping.
+    // start() snapshots this config; an ongoing recording keeps its own scale.
+    recordingConfig.depthNearMm = std::max(0, depthClippingNear);
+    recordingConfig.depthFarMm = std::max(recordingConfig.depthNearMm + 1, depthClippingFar);
+}
+
 void GuiApp::UIGravacaoKinect()
 {
     if (!ImGui::CollapsingHeader("Gravação Kinect RGB + Depth", ImGuiTreeNodeFlags_DefaultOpen)) return;
@@ -456,6 +484,8 @@ void GuiApp::UIGravacaoKinect()
     const auto state = recorder.status();
     const auto transfer = recordingTransfer.status();
     const bool conectado = source.getIsConnected();
+    // Sliders may have changed in this draw, after the automatic-session update.
+    sincronizarClippingGravacao();
 
     ImGui::Text("Kinect: %s", conectado ? "conectado" : "desconectado");
     ImGui::Text("Modo: %s", sessionController.isAutomatic() ? "automático / Corpo Expandido" : "manual");
@@ -509,16 +539,16 @@ void GuiApp::UIGravacaoKinect()
         {
             ImGui::Text("FPS %d | RGB %d kb/s | Depth %d kb/s",
                         recordingConfig.fps, recordingConfig.rgbKbps, recordingConfig.depthKbps);
-            ImGui::Text("Profundidade %d a %d mm", recordingConfig.depthNearMm, recordingConfig.depthFarMm);
+            ImGui::Text("Profundidade gravada: %d a %d mm", state.depthNearMm, state.depthFarMm);
         }
         else if (recordingConfigError.empty())
         {
             ImGui::SliderInt("FPS gravação", &recordingConfig.fps, 1, 30);
             ImGui::InputInt("RGB kb/s", &recordingConfig.rgbKbps);
             ImGui::InputInt("Depth kb/s", &recordingConfig.depthKbps);
-            ImGui::InputInt("Depth perto (mm)", &recordingConfig.depthNearMm);
-            ImGui::InputInt("Depth longe (mm)", &recordingConfig.depthFarMm);
+            ImGui::Text("Profundidade do Kinect: %d a %d mm", recordingConfig.depthNearMm, recordingConfig.depthFarMm);
         }
+        ImGui::TextWrapped("A gravação usa o clipping do Kinect no início. Ajustes durante a gravação valem para a próxima.");
         ImGui::Text("Descartados RGB/Depth: %llu / %llu",
                     static_cast<unsigned long long>(state.droppedRgb),
                     static_cast<unsigned long long>(state.droppedDepth));

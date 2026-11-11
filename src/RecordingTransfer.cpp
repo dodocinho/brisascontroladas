@@ -307,7 +307,7 @@ struct RecordingTransfer::Impl {
         const auto digest = integration::sha256(bytes);
         if (bytes.size() > 65536 || digest != job.at("sha256").get<std::string>()) throw std::runtime_error("Manifesto preparado foi alterado");
         const auto manifest = Json::parse(bytes);
-        if (manifest.at("gravacaoId") != id || !integration::uuidValid(manifest.at("sessaoId")))
+        if (manifest.at("gravacaoId") != id || !integration::sessionIdValid(manifest.at("sessaoId")))
             throw std::runtime_error("Identidade do manifesto inválida");
         const std::regex namePattern(id + "(?:-[a-z0-9]{1,16})?\\.(?:mp4|jpg)");
         for (const auto &f : manifest.at("arquivos")) {
@@ -343,7 +343,7 @@ struct RecordingTransfer::Impl {
     void automatic(const fs::path &folder, const Json &session, bool reset,
                    uint64_t &pending, uint64_t &completed, uint64_t &failed) {
         const auto id = session.at("gravacaoId").get<std::string>();
-        if (!integration::uuidValid(id) || !integration::uuidValid(session.at("sessaoId")) || folder.filename() != id)
+        if (!integration::uuidValid(id) || !integration::sessionIdValid(session.at("sessaoId")) || folder.filename() != id)
             throw std::runtime_error("Identidade automática inválida");
         const auto state = session.value("state", "");
         if (state != "completed" || session.value("rgb_exit_code", -1) != 0 || session.value("depth_exit_code", -1) != 0) {

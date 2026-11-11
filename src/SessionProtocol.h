@@ -1,18 +1,17 @@
 #pragma once
 #include "IntegrationSupport.h"
-#include <deque>
 struct SessionEvent {
-    std::string type, eventId, sessionId, recordingId;
-    int64_t time = 0;
+    std::string type, sessionId, recordingId;
     bool alreadyRecorded = false;
+    integration::Json session = nullptr;
 };
-// Used only by network worker. The checkpoint is committed before delivery.
+// Network worker only. Persist identity changes before delivery to the main thread.
 class SessionProtocol {
 public:
     explicit SessionProtocol(const std::string &checkpoint);
     static SessionEvent parse(const std::string &payload);
-    bool accept(SessionEvent &event, bool initialSnapshot);
+    bool accept(SessionEvent &event);
 private:
-    std::string path;
+    std::string path, producerIdentity;
     integration::Json state;
 };

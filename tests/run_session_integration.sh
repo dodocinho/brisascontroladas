@@ -7,4 +7,5 @@ trap 'rm -f "$binary"' EXIT
     -I../../../libs/json/include -Isrc tests/session_integration.cpp \
     src/SessionProtocol.cpp src/SessionWebSocketClient.cpp src/KinectRecorder.cpp \
     src/RecordingTransfer.cpp -lPocoNet -lPocoFoundation -o "$binary"
+python3 tests/validate_session_events.py "$binary"
 python3 tests/validate_session_integration.py "$binary"

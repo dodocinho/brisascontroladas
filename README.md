@@ -99,7 +99,9 @@ metadados e recuperação de falhas, está documentada em
 
 ## Integração com Corpo Expandido
 
-Controle automático autenticado por WebSocket POCO, vínculo explícito de sessão,
-manifesto v1 e publicação rsync confirmada por `.ready`, preservando a captura
-manual. Veja [configuração, arquitetura, recuperação e testes](docs/integracao-corpo-expandido.md).
-A integração vem desativada até configurar URL, token e destino do Mac.
+Controle automático de gravação e SRT por eventos WebSocket POCO, registro e
+estados para o backend, vínculo explícito de sessão e publicação rsync confirmada
+por `.ready`, preservando os controles manuais. Veja [configuração, arquitetura, recuperação e testes](docs/integracao-corpo-expandido.md).
+O exemplo vem desativado até configurar a URL `/api/v1/eventos`, o destino do Mac
+e a credencial `GRAVADOR_TOKEN` do backend. No Linux, use `tokenFile` ou
+`tokenEnvironment`; `CORPO_EXPANDIDO_TOKEN` é o nome da variável, não o segredo.

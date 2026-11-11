@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
@@ -27,11 +28,6 @@ extern char **environ;
 namespace
 {
 
-const char *caminhoPid()
-{
-    return "/tmp/brisascontroladas-srt.pid";
-}
-
 void fecharQuiet(int fd)
 {
     if (fd >= 0) close(fd);
@@ -47,9 +43,9 @@ bool processoEhFfmpeg(int numero)
 
 // Um fechamento brusco pode deixar o ffmpeg segurando a porta. Na próxima
 // transmissão a gente só encerra esse processo, conferindo o comando antes.
-void encerrarOrfao()
+void encerrarOrfao(const std::string &pidPath)
 {
-    std::ifstream entrada(caminhoPid());
+    std::ifstream entrada(pidPath.c_str());
     int antigo = 0;
     if (!(entrada >> antigo) || antigo <= 1) return;
     if (!processoEhFfmpeg(antigo)) return;
@@ -61,18 +57,18 @@ void encerrarOrfao()
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     if (kill(antigo, 0) == 0) kill(antigo, SIGKILL);
-    std::remove(caminhoPid());
+    std::remove(pidPath.c_str());
 }
 
-void gravarPid(int numero)
+void gravarPid(int numero, const std::string &pidPath)
 {
-    std::ofstream saida(caminhoPid());
+    std::ofstream saida(pidPath.c_str());
     if (saida) saida << numero;
 }
 
-void removerPid()
+void removerPid(const std::string &pidPath)
 {
-    std::remove(caminhoPid());
+    std::remove(pidPath.c_str());
 }
 
 bool escreveTudo(int fd, const unsigned char *dados, std::size_t total)
@@ -345,7 +341,7 @@ void TransmissorSrt::enviar(const ofPixels &quadro)
 FaseSrt TransmissorSrt::fase() const
 {
     std::lock_guard<std::mutex> lock(mutex);
-    if (pedidoLigado && ffmpegNoAr && quadrosEscritos > 0) return FaseSrt::Transmitindo;
+    if (pedidoLigado && ffmpegNoAr && saidaConfirmada) return FaseSrt::Transmitindo;
     if (pedidoLigado) return FaseSrt::Aguardando;
     if (houveErro) return FaseSrt::Erro;
     return FaseSrt::Desligada;
@@ -359,7 +355,7 @@ std::string TransmissorSrt::status() const
         if (!mensagemParada.empty()) return mensagemParada;
         return "Desligada.";
     }
-    if (quadrosEscritos > 0 && ffmpegNoAr)
+    if (saidaConfirmada && ffmpegNoAr)
     {
         std::string texto = "Conectado. Enviando " + std::to_string(larguraAtiva) + "x" + std::to_string(alturaAtiva);
         if (reduzida) texto += ", limitada a 1080p";
@@ -435,6 +431,18 @@ void TransmissorSrt::registraLinha(const std::string &linha)
 {
     if (linha.empty()) return;
     std::lock_guard<std::mutex> lock(mutex);
+    if (linha.rfind("frame=", 0) == 0) {
+        if (std::strtol(linha.c_str() + 6, nullptr, 10) > 0) {
+            saidaConfirmada = true;
+            ultimaFalha.clear();
+        }
+        return;
+    }
+    // Machine-readable progress shares stderr with diagnostics; keep it out of UI logs.
+    const auto key = linha.substr(0, linha.find('='));
+    for (const auto *progressKey : {"fps", "stream_0_0_q", "bitrate", "total_size", "out_time_us",
+            "out_time_ms", "out_time", "dup_frames", "drop_frames", "speed", "progress"})
+        if (key == progressKey) return;
     historico.push_back(linha);
     if (historico.size() > 8) historico.erase(historico.begin());
     if (linha.find("failed") != std::string::npos ||
@@ -443,6 +451,7 @@ void TransmissorSrt::registraLinha(const std::string &linha)
         linha.find("Invalid") != std::string::npos)
     {
         ultimaFalha = linha;
+        saidaConfirmada = false;
     }
 }
 
@@ -474,6 +483,14 @@ void TransmissorSrt::loopStderr()
         }
         if (resto.size() > 8192) resto.erase(0, resto.size() - 4096);
     }
+    std::lock_guard<std::mutex> lock(mutex);
+    saidaConfirmada = false;
+}
+
+std::string TransmissorSrt::erro() const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return houveErro ? mensagemParada : (pedidoLigado && !saidaConfirmada ? ultimaFalha : "");
 }
 
 void TransmissorSrt::loopEscrita()
@@ -560,15 +577,16 @@ void TransmissorSrt::encerrarProcesso()
         ocupado = false;
         temQuadro = false;
         quadrosEscritos = 0;
+        saidaConfirmada = false;
         quadroPendente.clear();
     }
-    removerPid();
+    removerPid(pidPath);
 }
 
 void TransmissorSrt::abrirProcesso(int largura, int altura)
 {
     if (escritor.joinable() || leitor.joinable() || ffmpegNoAr) encerrarProcesso();
-    encerrarOrfao();
+    encerrarOrfao(pidPath);
 
     int entrada[2] = {-1, -1};
     int erros[2] = {-1, -1};
@@ -599,6 +617,7 @@ void TransmissorSrt::abrirProcesso(int largura, int altura)
         "ffmpeg",
         "-hide_banner",
         "-loglevel", "warning",
+        "-nostats", "-stats_period", "0.2", "-progress", "pipe:2",
         "-fflags", "nobuffer",
         "-flags", "low_delay",
         "-use_wallclock_as_timestamps", "1",
@@ -678,7 +697,7 @@ void TransmissorSrt::abrirProcesso(int largura, int altura)
         std::lock_guard<std::mutex> lock(mutex);
         comandoAtivo = visivel;
     }
-    gravarPid(pid);
+    gravarPid(pid, pidPath);
     escritor = std::thread(&TransmissorSrt::loopEscrita, this);
     leitor = std::thread(&TransmissorSrt::loopStderr, this);
     ofLogNotice("TransmissorSrt") << "Ligando: " << destino;

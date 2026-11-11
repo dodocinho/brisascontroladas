@@ -1,184 +1,209 @@
-# Brisas Controladas → integração com Corpo Expandido
+# Controle de sessões do Corpo Expandido
 
-Implementação do produtor Linux, contrato v1 fornecido em 2026-11-03. As cópias
-canônicas recebidas estão em [contrato](contracts/integracao-brisas-controladas.md)
-e [JSON Schema](contracts/manifesto-gravacao-v1.schema.json). O código deste
-repositório não modifica Fastify, React, o catálogo ou TouchDesigner.
+O Linux/Naberius recebe eventos do backend no Mac/Mephistopheles por WebSocket.
+A integração reutiliza a captura Kinect, os dois encoders de gravação, o transmissor
+SRT da composição e o worker de transferência existentes. Não requer novo addon
+ou pacote: usa POCO Net/Foundation e nlohmann JSON já ligados ao projeto.
 
-## Auditoria e reaproveitamento
+## Arquitetura investigada
 
-O checkout já continha alterações locais de captura e transferência, preservadas
-nesta implementação. OpenFrameworks **0.12.1** é confirmado por `ofConstants.h`.
-Addons: ofxImGui, ofxKinect, ofxOpenCv, ofxOsc, ofxTensorFlow2. O sistema dispõe de
-**POCO 1.15.3**, headers e bibliotecas dinâmicas Net/Foundation; o projeto passou a
-ligá-las explicitamente. `Poco::Net::WebSocket` oferece handshake cliente com
-headers adicionais; ping/pong é responsabilidade do aplicativo
-([documentação POCO](https://docs.pocoproject.org/current/Poco.Net.WebSocket.html)).
-Não foi instalado addon obsoleto nem serviço intermediário.
-
-| Componente existente | Comportamento preservado / adaptação |
+| Componente | Responsabilidade |
 | --- | --- |
-| `GuiApp`, `MainApp`, `WindowManager` | UI/render e janelas; setup/update/exit integram o novo cliente |
-| `FonteGlobalKinect` | Única captura, registro de Depth no RGB, entrega de frames na thread principal; nenhuma chamada gráfica na rede |
-| `KinectRecorder` | Filas SPSC limitadas, dois encoders FFmpeg, stop assíncrono e waitpid; adicionados IDs imutáveis, nomes canônicos automáticos e persistência com fsync |
-| `RecordingTransfer` | Mesmo worker serial, flock, executor posix_spawn, ffprobe, thumbnail, limite de banda, retries, logs e botão de retentativa; acrescentado protocolo v1 |
-| `TransmissorSrt` | Sem alterações; rede e encoder de captura continuam separados |
-| Controles manuais | Gravação Kinect manual e gravação da composição preservadas; eventos nunca adotam/param uma captura manual |
+| `FonteGlobalKinect` | Singleton atualizado por `GuiApp::update`, câmera RGB/depth compartilhada, demonstração quando indisponível; entrega frames ao gravador |
+| `KinectRecorder` | Filas SPSC limitadas; worker com dois FFmpeg; MP4/H.264, depth quantizado em 8 bits, segmentação, limites de tamanho/duração, fechamento com waitpid |
+| `TransmissorSrt` | Envia a composição da janela de projeção (800×600), caller SRT para listener no Mac; threads de escrita e leitura de stderr, retentativas existentes |
+| `SessionWebSocketClient` | Thread POCO: conexão, registro, JSON, persistência e filas protegidas; não toca câmera, encoder ou OpenGL |
+| `SessionRecordingController` | Executado na thread principal: sessão desejada, gravação automática e propriedade da transmissão |
+| `RecordingTransfer` | Worker serial existente: ffprobe, thumbnail, manifesto, rsync, retries persistentes e publicação por `.ready` |
 
-Antes, a captura usava pastas UTC e `rgb/rgb_NNN.mp4`,
-`depth/depth_NNN.mp4`, `session.json`, `capture/N.json`, `timestamps.csv` e logs.
-Cada segmento/canal recebia um UUID de publicação no worker; a publicação legada
-enviava vídeo/JPEG, JSON temporário e renomeava JSON por SSH. Já havia persistência
-de tentativas, thumbnails, validação ffprobe e recuperação de jobs. Não havia
-WebSocket, vínculo explícito à sessão web ou marcador `.ready`.
+As duas janelas compartilham a thread principal. O start do gravador é assíncrono;
+a solicitação do SRT acontece no mesmo update, sem temporizador entre eles.
+O início efetivo dos dois encoders/pipelines pode diferir: não há promessa de
+sincronização de exposição entre Kinect, composição e receptor SRT.
 
-Os vídeos continuam MP4 H.264/yuv420p, 640×480, CFR configurável até 30 fps,
-sem áudio, faststart; Depth continua quantizado e com perdas. Nenhuma conversão
-adicional ou novo pipeline de gravação foi criado.
-
-## Configuração
+## Configuração no Naberius
 
 Mescle [o exemplo](kinect-recording.example.json) com
-`bin/data/kinect-recording.json`. Configurações existentes são preservadas.
-A integração vem **desativada** porque IP, token e destino reais não foram
-fornecidos. Para ativar:
+`bin/data/kinect-recording.json`, mantendo os ajustes de gravação/transferência:
 
 ```json
 {
   "corpoExpandido": {
     "enabled": true,
-    "url": "ws://IP_DO_MEFISTOFELES:3000/api/v1/gravador/ws",
-    "tokenEnvironment": "BRISAS_GRAVADOR_TOKEN"
+    "url": "ws://IP_DO_MEPHISTOPHELES:3000/api/v1/eventos",
+    "tokenEnvironment": "",
+    "tokenFile": "corpo-expandido.token"
   },
-  "transfer": {
-    "enabled": true,
-    "sshHost": "mephistopheles",
-    "remoteDirectory": "/Users/dodo/BrisasControladas/gravacoes",
-    "maxRetries": 10,
-    "retryIntervalSeconds": 30,
-    "bandwidthKbps": 2048
+  "srt": {
+    "port": 9494,
+    "latencyMs": 20
   }
 }
 ```
 
-`remoteDirectory` deve ser **exatamente** a pasta configurada em
-`GRAVACOES_PASTA` no backend. O caminho do exemplo é o do contrato, não uma
-descoberta da configuração efetiva do Mac. Não mude a pasta de uma fila em
-andamento: recibos concluídos não são republicados em outro destino.
+Substitua o placeholder pelo IPv4 real do Mac. A URL não está fixada no código.
+O IPv4 da URL alimenta o campo IP do Mac da interface, também usado pelo SRT.
+Se usar nome DNS ou túnel para WebSocket, adicione `srt.host` com o IPv4 real do
+receptor. Porta e latência são configuráveis também na interface. Reinicie o
+aplicativo após editar o arquivo; o controle IP da interface conserva o fluxo
+existente de atualizar/persistir o host WebSocket.
 
-O token só é lido da variável de ambiente indicada, sem escrita em JSON, URL ou
-logs. Use o mesmo valor de `GRAVADOR_TOKEN` do Fastify. Por exemplo, em Bash:
+O backend exige `Authorization: Bearer <GRAVADOR_TOKEN>` para registrar o
+openFrameworks. Crie `bin/data/corpo-expandido.token` com **apenas o valor** de
+`GRAVADOR_TOKEN` configurado no Mac (sem aspas nem `GRAVADOR_TOKEN=`), e execute
+`chmod 600 bin/data/corpo-expandido.token`. Esse arquivo é ignorado pelo Git.
+O caminho relativo de `tokenFile` é resolvido dentro de `bin/data`.
 
-```bash
-read -rsp 'Token do gravador: ' BRISAS_GRAVADOR_TOKEN
-export BRISAS_GRAVADOR_TOKEN
-./bin/brisascontroladas
-unset BRISAS_GRAVADOR_TOKEN
+Como alternativa, remova `tokenFile`, configure
+`"tokenEnvironment": "CORPO_EXPANDIDO_TOKEN"` e disponibilize a variável ao
+processo que inicia o aplicativo. O conteúdo deve ser o mesmo segredo do Mac;
+`CORPO_EXPANDIDO_TOKEN` é somente o **nome da variável**. Um export em outro
+terminal não é herdado por um aplicativo iniciado pelo desktop.
+
+Configure somente uma das fontes. Ausência de credencial impede a conexão;
+não há fallback sem autenticação. O arquivo é relido a cada tentativa, e o
+segredo não aparece nos logs. Suporte atual: `ws://` em LAN/túnel SSH;
+`wss://` é recusado.
+
+O exemplo versionado vem desativado até configurar o destino. O arquivo local
+ignorado pelo Git não é substituído. O cliente usa somente o protocolo atual:
+troque URLs antigas por `/api/v1/eventos` e remova a chave obsoleta `protocol`.
+
+A transferência conserva `transfer.enabled`, `sshHost`, `remoteDirectory`,
+`maxRetries`, `retryIntervalSeconds` e `bandwidthKbps`. O diretório remoto deve
+coincidir com a pasta de ingestão do backend. Consulte também
+[transferência](transferencia-kinect.md) e [gravação](gravacao-kinect.md).
+
+## Protocolo de eventos
+
+Após **cada** conexão, antes de qualquer estado, o cliente envia:
+
+```json
+{"tipo":"cliente.registrar","cliente":"openframeworks","versao":1}
 ```
 
-Ao usar launcher/systemd, disponibilize a variável ao processo do aplicativo
-por configuração privada do operador. Nunca versione um arquivo com o segredo.
-Reinicie o aplicativo depois de alterar URL/token/configuração.
+O backend atual envia um `sessao.estado` público ao abrir o socket, antes de
+avaliar o registro. Após autorizar a credencial, envia outro snapshot para o
+dispositivo. O cliente aguarda esse segundo snapshot antes de controlar captura
+ou enviar estados. Receber apenas o primeiro **não confirma autenticação**.
+Sem confirmação em dez segundos, reconecta com backoff.
 
-O cliente suporta `ws://` na LAN confiável ou em túnel SSH. `wss://` é recusado
-explicitamente; TLS nativo não foi incluído nesta etapa. Para tráfego cifrado,
-use `ssh -N -L 3001:127.0.0.1:3000 mephistopheles` e configure
-`ws://127.0.0.1:3001/api/v1/gravador/ws`. O backend precisa estar ouvindo na
-interface esperada; libere a porta 3000 somente para a rede necessária, conforme
-o contrato. Use uma única instância do backend.
+Exemplo de início após o registro:
 
-No Mac, habilite Acesso Remoto e disponibilize rsync. No Linux, use o alias SSH
-existente, por exemplo:
-
-```sshconfig
-Host mephistopheles
-    HostName IP_DO_MEFISTOFELES
-    User dodo
-    IdentityFile ~/.ssh/id_ed25519
-    IdentitiesOnly yes
+```json
+{
+  "tipo": "sessao.iniciada",
+  "versao": 1,
+  "sessao": {
+    "id": "identificador-da-sessao",
+    "iniciadaEm": "2026-11-11T18:00:00.123Z",
+    "corpoPresente": {
+      "participanteId": "participante-123",
+      "elemento": "ar",
+      "corPrincipal": "#00aaff",
+      "paleta": ["#00aaff", "#112233"]
+    },
+    "corpoExpandido": null
+  }
+}
 ```
 
-Confira a chave do host numa conexão manual. O aplicativo usa `BatchMode=yes` e
-`StrictHostKeyChecking=yes`; chaves com senha precisam estar no ssh-agent.
-Verifique no ambiente real:
+`versao` deve ser inteiro 1. `id` é texto não vazio, até 256 bytes, sem caracteres
+de controle; nunca vira caminho ou comando. `iniciadaEm` usa UTC ISO 8601 com
+`Z` e precisão opcional de 1–3 casas. `corpoPresente` é objeto; seus campos são
+opcionais, strings, e `paleta` é lista de strings. `corpoExpandido` é objeto
+opcional ou nulo. Campos adicionais são preservados nos metadados locais.
+Mensagens inválidas são rejeitadas e registradas sem interromper a captura.
 
-```sh
-ssh -oBatchMode=yes mephistopheles 'command -v rsync'
-ssh -oBatchMode=yes mephistopheles 'mkdir -p /Users/dodo/BrisasControladas/gravacoes'
+Encerramento:
+
+```json
+{"tipo":"sessao.encerrada","sessaoId":"identificador-da-sessao"}
 ```
 
-O host deve ser alias seguro, e o caminho absoluto ou `~/...`, sem espaços nem
-metacaracteres. Essas restrições já existiam no executor. Os processos locais
-recebem argv separado; nenhum dado recebido pelo WebSocket vira comando shell.
+`versao: 1` é opcional no encerramento. Um ID diferente não afeta a sessão ativa.
 
-## Comunicação e estados
+Sincronização: `{"tipo":"sessao.estado","versao":1,"sessao":{...}}` usa o mesmo
+objeto do início; `sessao: null` finaliza somente a gravação automática existente.
+O backend deve enviar o snapshot autoritativo após cada registro, inclusive nulo.
+Como esse contrato não fornece sequência/eventId, aplica-se a ordem de chegada
+no socket; `iniciadaEm` não é usado como ordem de eventos. Inícios de sessões já
+encerradas são ignorados; um snapshot explícito continua sendo autoritativo.
 
-```text
-Fastify → POCO / thread de rede
-        → validação + checkpoint persistido + fila limitada
-        → GuiApp::update / SessionRecordingController
-        → KinectRecorder::start/stop / worker FFmpeg
-        → session.json completed após waitpid dos dois encoders
-        → RecordingTransfer / worker serial
-        → ffprobe + JPEG opcional + manifesto → rsync → .ready
-        → importador do Corpo Expandido → gravacao.atualizada → React
+## Estados, recuperação e controles manuais
+
+- Uma sessão tem UUID de captura persistido antes de chegar à UI. Repetir início
+  ou snapshot da mesma sessão não cria encoders nem reinicia arquivos.
+- Uma gravação manual adia a automática. A integração não adota nem encerra a
+  gravação manual. O botão Stop da gravação automática continua disponível;
+  snapshots repetidos no mesmo processo não desfazem esse Stop.
+- Ao iniciar uma nova sessão, a thread principal solicita abrir o Kinect caso
+  esteja desconectado. Faz uma tentativa por sessão, sem loop que sobreponha o
+  controle manual. Falha de captura/encoder aparece nos estados enviados.
+- Se o SRT já estava solicitado, ele é reutilizado e permanece ligado ao fim da
+  sessão. Caso a sessão o tenha iniciado, ele para após o gravador fechar os
+  arquivos. **Manter transmissão após sessão** transfere o controle à operação
+  manual. Stop manual suprime reinício por mensagens duplicadas da mesma sessão.
+- Queda do WebSocket **não** para captura ou transmissão. Backoff: 1, 2, 5, 10,
+  30 segundos; o contador reinicia somente após conexão registrada estável por
+  pelo menos 30 segundos. Credencial ausente, HTTP 401/403 ou fechamento 1008
+  aguardam 30 segundos antes da próxima tentativa. Ping a cada 20 segundos,
+  timeout sem tráfego de 75 segundos, mensagens/fragmentos limitados a 16 KiB.
+- No reinício do aplicativo, um snapshot ativo permite nova captura com outro
+  UUID. Os arquivos anteriores nunca são sobrescritos. Capturas interrompidas
+  sem confirmação de fechamento são preservadas e não são publicadas.
+- Uma mudança para outra sessão aguarda finalizar os arquivos da anterior. A
+  transferência não bloqueia a nova gravação. Nunca se desliga o Kinect ao fim
+  de uma sessão.
+
+O cliente verifica o estado local até cinco vezes por segundo e envia
+`dispositivo.estado` somente quando muda, ou após novo registro. Só envia estados
+da sessão informada pelo backend ou o encerramento dessa sessão. Não envia
+telemetria com ID nulo, pois o backend a rejeita. A fila de saída mantém somente
+o snapshot mais recente (estados intermediários muito rápidos podem ser combinados):
+
+```json
+{
+  "tipo": "dispositivo.estado",
+  "versao": 1,
+  "cliente": "openframeworks",
+  "sessaoId": "identificador-da-sessao",
+  "gravando": true,
+  "transmitindo": false,
+  "finalizando": false,
+  "modo": "automatico",
+  "mensagem": "Automática: sessão=... gravação=..."
+}
 ```
 
-`SessionWebSocketClient` autentica com `Authorization: Bearer ...`, recebe
-fragmentos de texto até 16 KiB, responde ping com pong e aguarda estado inicial.
-Detecta close/EOF/erro, ausência de estado em 10 s e ausência de tráfego/heartbeat
-em 75 s. Reconexão em 1, 2, 5, 10, 30 s; o contador reinicia após um evento
-válido. HTTP 401/403 é identificado nos logs/status; 409 indica conflito de
-sessões no backend. Não há comandos Linux → backend, ACK ou replay.
+`erro` contém diagnóstico quando houver falha. `gravando` exige que o encoder
+esteja aceitando frames e já tenha escrito pares. `transmitindo` exige progresso
+de saída do FFmpeg (`-progress`), além de processo ativo; abrir um processo ou
+escrever no pipe de entrada não basta. Isso confirma saída no produtor, não
+confirma renderização no TouchDesigner. Uma gravação manual continua disponível
+na interface, mas seu estado com `sessaoId: null` não é enviado ao backend.
+No fechamento automático, o ID é conservado no estado final com `gravando: false`.
+O backend atual publica os booleanos; os diagnósticos adicionais ficam também
+disponíveis na interface local. Eventos de catálogo/pessoas e o eco dos estados
+de dispositivo são ignorados, sem gerar respostas ou logs de erro.
 
-`SessionProtocol` aceita exatamente `v`, `type`, `eventId`, `sessaoId`,
-`timestamp`. v é inteiro 1; IDs UUID minúsculos; calendário UTC válido, fração
-opcional de 1–3 dígitos. Só `sessao.estado` aceita sessão nula. São suportados:
+Os logs de conexão ficam no terminal e em `recordings/session-websocket.log`
+(relativo ao `output_root` configurado), com rotação de 256 KiB e uma cópia
+`.previous`. Um fechamento informa código e motivo. `1008` com
+`Credencial de dispositivo necessaria` indica que o registro não foi autorizado.
+Snapshots duplicados não reescrevem o checkpoint no disco.
 
-- `sessao.iniciada`: reserva a captura para a sessão, aguarda Kinect e ausência de
-  captura manual e inicia com UUID persistido.
-- `sessao.encerrada`: altera somente a sessão correspondente; pede stop.
-- `sessao.estado`: mesma sessão mantém a captura; nulo finaliza a automática;
-  sessão diferente aguarda fechamento completo antes de iniciar outra.
+## Identificação, manifestos e publicação
 
-O checkpoint `session-control.json` mantém maior timestamp aceito, últimos 256
-IDs de evento, sessão desejada, identidade da captura e sessões encerradas.
-Mensagens anteriores ao timestamp persistido são ignoradas; empates seguem a
-ordem do socket, e uma sessão encerrada não reabre por `iniciada` repetido.
-O UUID é reutilizado enquanto representa a mesma captura. `session.json`
-concluído/erro impede que uma nova sincronização reinicie essa captura.
-Mantenha relógios sincronizados: rollback no relógio do backend pode causar
-rejeição de eventos até o timestamp alcançar o último aceito.
-
-A UI consome uma fila protegida por mutex. DNS, sockets, persistência dos eventos,
-FFmpeg, ffprobe, fsync e rsync rodam fora de update/draw. O shutdown pode aguardar
-os timeouts de rede/processos; não se espera rede durante renderização.
-
-**Queda do WebSocket não encerra captura.** Esta é uma decisão explícita do pedido
-que prevalece sobre a recomendação contrária no contrato anexado. Após reconectar,
-o snapshot é reconciliado. Sessões inteiras ocorridas offline não são recuperáveis.
-
-Uma captura manual existente adia a automática enquanto a sessão continuar
-ativa. Durante uma automática, o botão de iniciar outra captura não aparece.
-O botão Stop local permanece como interrupção do produtor: não encerra a sessão
-web e não reinicia automaticamente a mesma captura. Desconexão do Kinect, limite
-de armazenamento/duração e erros dos encoders continuam podendo parar a captura.
-A UI informa o modo, a sessão, o UUID e o estado de conexão/transferência.
-
-## Arquivos e manifesto
-
-Apenas capturas automáticas usam a estrutura nova, sem copiar os vídeos:
+Preservada a estrutura automática já existente:
 
 ```text
 recordings/<gravacaoId>/
   <gravacaoId>-rgb000.mp4
   <gravacaoId>-depth000.mp4
-  <gravacaoId>-rgb001.mp4   # se houver outros segmentos
-  <gravacaoId>-depth001.mp4
-  <gravacaoId>.jpg          # opcional
-  <gravacaoId>.json         # manifesto canônico
-  session.json             # diagnóstico técnico local
-  capture/0.json           # intervalos reais da captura
+  <gravacaoId>.json          # manifesto de publicação existente
+  session.json              # inclui sessaoId, participanteId e objeto sessao
+  capture/0.json            # manifesto técnico do segmento
   rgb/segments.csv
   depth/segments.csv
   timestamps.csv
@@ -186,138 +211,73 @@ recordings/<gravacaoId>/
   publication/<gravacaoId>.ready
 ```
 
-Um UUID por captura completa, compartilhado entre os canais e preservado em
-retries. Não há UUID novo por envio. RGB vem primeiro na lista do manifesto;
-Depth e segmentos seguintes são arquivos adicionais. Os metadados originais
-continuam locais, pois o manifesto canônico proíbe campos extras.
+`capture/N.json` agora contém `sessaoId`, `gravacaoId`, `participanteId`, arquivos
+RGB/depth correspondentes, FPS, resolução, início/fim UTC em milissegundos,
+primeiro frame e início monotônico. `session.json` registra o objeto completo da
+sessão, inclusive seus participantes/cores, o timestamp de início web e os dados
+de sincronização existentes. Esses metadados são locais, não marcadores de
+prontidão. As capturas manuais mantêm seus nomes e estrutura anteriores.
 
-O manifesto tem somente `v`, `gravacaoId`, `sessaoId`, `iniciadaEm`, `encerradaEm`
-e `arquivos[{nome,tipo,tamanhoBytes}]`. Horários vêm dos eventos de captura,
-antes da espera de encoder/transferência, e usam UTC com milissegundos. Os nomes
-são basenames canônicos; tamanhos reais positivos são medidos após fechamento.
-JPEG é omitido quando desativado, e falha ao gerar JPEG habilitado fica pendente.
+O manifesto remoto continua com `v`, `gravacaoId`, `sessaoId`, `iniciadaEm`,
+`encerradaEm`, `arquivos[{nome,tipo,tamanhoBytes}]`, sem campos extras que
+quebrariam importadores anteriores. Veja o [contrato de publicação](contracts/integracao-brisas-controladas.md)
+e seu [schema original](contracts/manifesto-gravacao-v1.schema.json), que restringe
+`sessaoId` a UUID. O cliente aceita IDs opacos no WebSocket: para IDs não UUID,
+o importador também precisa aceitar esses valores.
+Os UUIDs de gravação e nomes de arquivos continuam canônicos.
 
-O contrato limita 32 entradas. Para a captura automática, o intervalo de segmento
-é `max(segment_seconds, ceil(max_duration_seconds / 15))`: até 30 MP4 + JPEG.
-Com os padrões de quatro horas e 600 s, resulta em segmentos de **960 s**.
-Captura manual mantém seus 600 s. O limite de quatro horas/10 GB permanece.
-O primeiro MP4 RGB é o vídeo principal servido pelo backend; os demais devem ser
-acessados pelas rotas de arquivos adicionais, não por concatenação implícita.
+A publicação só ocorre após `session.json: completed`, exit code zero dos dois
+encoders, fsync e validação ffprobe de todos os segmentos. Mídia e manifesto são
+enviados com rsync `--delay-updates`; depois, em operação separada, o `.ready`
+contendo SHA-256 dos bytes do manifesto. O importador deve exigir esse marcador.
+Nunca publicar por presença de `capture/N.json`, nem promover arquivo incompleto
+apenas porque ffprobe consegue abri-lo. Nenhum arquivo é apagado automaticamente.
 
-## Transferência, confirmação e recuperação
+Continuam os limites de quatro horas/10 GB. A captura automática ajusta os
+segmentos para até 15 pares + thumbnail dentro das 32 entradas do contrato
+existente: com os padrões, 960 segundos. Manual conserva 600 segundos.
 
-A fila automática espera `session.json` completed e exit code zero dos **dois**
-encoders, escritos após waitpid e fsync dos MP4 automáticos. Em seguida verifica cada segmento com ffprobe
-(codec, duração e número de frames contra eventos da captura), cria e sincroniza o JPEG opcional,
-grava o manifesto por temporário + fsync + rename + fsync do diretório e fixa seu
-SHA-256 no job. Arquivos canônicos devem ser regulares, sem symlinks/hard links.
-
-1. Valida identidade, nomes e tamanhos. Recusa manifesto preparado alterado.
-2. Consulta `.ready` remoto. Hash diferente é colisão; hash igual recupera uma
-   publicação cuja confirmação local se perdeu, sem reescrever mídia.
-3. Envia cada MP4, JPEG opcional e JSON com rsync `--delay-updates`, aguardando
-   sucesso em cada chamada. Nunca usa `--inplace`, `--append` ou `--delete`.
-4. Gera marcador numa pasta separada, contendo SHA-256 hexadecimal minúsculo
-   **dos bytes exatos do JSON**, mais newline.
-5. Envia `.ready` em outra chamada rsync. A renomeação temporário→final do rsync
-   publica o marcador no filesystem de destino.
-6. Só depois persiste `state=completed` no job local.
-
-A pasta remota é plana e contém somente os arquivos declarados, JSON e ready.
-O importador deve exigir o marcador, nunca apenas a presença do JSON. Não se
-utilizam os diretórios staging/ready sugeridos originalmente: o contrato
-canônico escolheu marcador explícito. O SHA-256 não é checksum dos vídeos.
-
-Captura (`starting/recording/completed/error` mais status de finalização) e
-transferência (`pending/transferring/publishing/completed/failed`) têm ciclos
-separados. Nova captura não espera rede. Um worker e o flock por output_root
-serializam a fila; o cliente de controle também tem lock exclusivo por root.
-
-Em falha, preservam-se mídia, manifesto, UUID, contagem e próxima tentativa. No
-reinício, trabalhos preparados ou concluídos sem recibo retomam; retries repetem
-os mesmos bytes, incluindo o caso de falha ao publicar ready. Configuração de
-thumbnail alterada não modifica jobs já preparados. O botão **Tentar transferências
-novamente** zera o esgotamento das tentativas, sem gerar outra gravação.
-
-Não edite um manifesto/arquivo já publicado. Se a validação detectar tamanho ou
-hash diferente, restaure os originais antes de repetir. Nenhum arquivo local é
-apagado automaticamente. Consulte `transfer.log`, `transfer-process.log`, os logs
-do encoder e `publication/automatic.job.json` para o motivo da falha.
-
-Uma captura interrompida por morte do produtor, sem fechamento confirmado, ganha
-`interrupted.json` de diagnóstico e não é publicada, mesmo se ffprobe conseguir
-abri-la. Requer inspeção/recuperação manual; não transforme `state` em completed
-apenas para forçar envio. Após estado oficial ativo e detecção de produtor anterior
-morto, a nova captura recebe outro UUID; isso também permite continuar uma sessão
-após encerramento normal do aplicativo (`application_exit`), sem reutilizar a
-captura já concluída. Nos demais encerramentos locais intencionais, a mesma
-captura não reinicia. O material interrompido permanece local.
-A detecção do produtor usa PID, boot ID e instante de criação do processo em
-`/proc`, evitando confundir um PID reutilizado após reboot com o gravador anterior.
-Checkpoint corrompido bloqueia o controle remoto; não é descartado silenciosamente.
-
-## Testes sem Kinect
-
-Dependências: compilador C++17, pthread, POCO Net/Foundation, nlohmann/json já
-incluído no OF, Python 3 (somente stdlib), FFmpeg/libx264, ffprobe, rsync.
+## Testes e validação na instalação
 
 ```sh
+make -j2
 bash tests/run_session_integration.sh
 bash tests/run_kinect_recorder.sh
 bash tests/run_recording_transfer.sh
-make -j2
-make -f tests/Makefile TestReleaseABI -j2
+make -f tests/Makefile TestReleaseABI TestSessionSrt -j2
+obj/linux64/Release/tests/lifecycle
+python3 tests/validate_session_srt.py
 ```
 
-O teste novo usa sockets POCO reais contra fixture HTTP/WebSocket local e
-FFmpeg/ffprobe/rsync reais. SSH é simulado para executar no diretório temporário,
-sem tocar no Mac. Verifica Bearer, 401, fragmentação, pong, desconexão/reconexão,
-JSON inválido/antigo/duplicado, checkpoint após reinício, conflito manual,
-transições de sessão, manifesto usando as regras do schema fornecido, decodificação
-dos vídeos, JPEG opcional, rsync falhando na mídia/ready, perda de confirmação,
-colisão remota, arquivo local alterado e captura interrompida.
-Artefatos ficam em `/tmp/brisas-session-*`; as suites anteriores continuam cobrindo
-captura manual, encoder morto/travado, armazenamento e publicação legada.
+Os testes usam POCO/WebSocket reais em loopback, FFmpeg/ffprobe reais, frames
+sintéticos e rsync real com destino SSH simulado em diretórios temporários.
+Cobrem registro autenticado e sua recusa, framing/ping, JSON inválido, idempotência, início automático,
+propriedade SRT, encerramento, falha de encoder/captura, reconexão durante captura,
+reinício real do processo, indisponibilidade inicial, backoff após conexões curtas,
+conexão ociosa sem telemetria inválida, snapshots nulos, metadados,
+publicação interrompida e colisões. O teste SRT usa o transmissor real com PID file
+isolado e listener FFmpeg local, sem tocar a transmissão da aplicação em uso.
 
-## Pendências no ambiente real
+Para validar com frontend e TouchDesigner:
 
-- Configurar URL, token compartilhado, alias SSH e pasta equivalente a
-  GRAVACOES_PASTA; ativar `corpoExpandido.enabled`.
-- Validar handshake com a instância Fastify real (incluindo 409), evento de início
-  e encerramento, recebimento/importação e associação pelo sessaoId.
-- Confirmar `gravacao.atualizada` e atualização React, inclusive acesso aos canais
-  e segmentos adicionais; esse repositório não implementa o consumidor.
-- Exercitar Kinect físico + UI/OpenGL + SRT simultâneo, consumo de CPU/disco/rede,
-  gravação longa e reprodução no TouchDesigner. Os testes sintéticos não comprovam
-  desempenho da instalação nem a ingestão efetiva no Mac.
-
-## Arquivos desta integração
-
-Novos: `IntegrationSupport.h`, `SessionProtocol.{h,cpp}`,
-`SessionWebSocketClient.{h,cpp}`, `SessionRecordingController.h`, três arquivos
-`tests/*session_integration*`, este guia, exemplo JSON e cópias do contrato/schema.
-Adaptados: `KinectRecorder.{h,cpp}`, `RecordingTransfer.cpp`, `GuiApp.{h,cpp}`,
-`config.make`, configuração Kinect, script de teste da transferência, README e
-referências nos guias existentes. `FonteGlobalKinect` e `TransmissorSrt` não
-precisaram de mudanças adicionais nesta integração.
-
-## Validação nesta entrega — 2026-11-03
-
-- `make -j2`: passou; permanecem avisos preexistentes em addons/UI.
-- `bash tests/run_recording_transfer.sh`: passou, incluindo publicação legada,
-  rede indisponível, retomada e arquivos inválidos. Artefatos finais:
-  `/tmp/brisas-transfer-lf2_yxak`.
-- `bash tests/run_session_integration.sh`: passou com POCO/FFmpeg/rsync reais e
-  fixtures locais, incluindo recuperação do controle e da publicação, fsync da
-  mídia e identificação do produtor após reboot. Artefatos finais:
-  `/tmp/brisas-session-iflbyjgr`.
-- `bash tests/run_kinect_recorder.sh`: passou, incluindo decodificação, limites e
-  falhas dos encoders. Artefatos: `/tmp/brisas-recorder-test.6eM8zF`.
-- `make -f tests/Makefile TestReleaseABI -j2` e execução de
-  `obj/linux64/Release/tests/lifecycle` sem `--gl`: passaram.
-- A primeira execução da fixture WebSocket foi bloqueada pelo sandbox ao criar
-  socket. A execução com permissão para localhost passou, sem acessar o Mac.
-  O teste confirma que a captura real do gravador permanece ativa na desconexão.
-- Os módulos de teste são compilados com `-Wall -Wextra -Werror`.
-- Não foram executados testes no Fastify real, no React, no Mac por SSH real,
-  no Kinect físico, com OpenGL, nem no TouchDesigner.
+1. No Mac, inicie o backend acessível na LAN. Configure a URL real e a credencial
+   no Linux. Reinicie o openFrameworks e confirme `Registro confirmado` no log.
+   Aguarde ao menos 40 segundos: deve permanecer conectado, sem repetir registros.
+2. Abra no TouchDesigner um Video Stream In TOP listener em
+   `srt://0.0.0.0:9494?mode=listener&latency=20000` (ou a URL exibida na UI).
+3. Com o Kinect conectado, inicie uma sessão pelo frontend. Confira o ID na UI,
+   a criação de RGB/depth e o estado enviado. O receptor deve mostrar a
+   **composição** atual, não necessariamente o RGB cru; os arquivos guardam RGB/depth.
+4. Repita o evento de início e envie snapshot com o mesmo ID. A pasta/UUID e a
+   conexão SRT devem continuar iguais. Interrompa só o WebSocket, mantendo SRT e
+   Kinect, e confira que os arquivos continuam crescendo.
+5. Reconecte e envie snapshot ativo. Depois reinicie o aplicativo durante a
+   sessão: deve surgir outro UUID associado ao mesmo ID, preservando a pasta anterior.
+6. Encerre pelo frontend. Espere a finalização na interface local, confira os MP4 com ffprobe,
+   o vínculo no manifesto e a chegada de `.ready` ao Mac. Confirme a importação
+   e a exibição pelo frontend. Repita com SRT iniciado manualmente: ele deve continuar.
+7. Feche o listener ou desconecte o Kinect. Confira o estado real no backend,
+   o diagnóstico na interface local,
+   UI responsiva e arquivos preservados. Conexão USB, hardware e importador/rotas
+   do backend real precisam dessa validação na instalação; os testes locais não
+   comprovam esses componentes externos.

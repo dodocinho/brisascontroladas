@@ -5,8 +5,6 @@
   "rgb_kbps": 2500,
   "depth_kbps": 1500,
   "preset": "veryfast",
-  "depth_near_mm": 500,
-  "depth_far_mm": 4000,
   "segment_seconds": 600,
   "queue_frames": 8,
   "transfer": {
@@ -24,7 +22,12 @@
   },
   "corpoExpandido": {
     "enabled": false,
-    "url": "ws://IP_DO_MEFISTOFELES:3000/api/v1/gravador/ws",
-    "tokenEnvironment": "BRISAS_GRAVADOR_TOKEN"
+    "url": "ws://IP_DO_MEPHISTOPHELES:3000/api/v1/eventos",
+    "tokenEnvironment": "",
+    "tokenFile": "corpo-expandido.token"
+  },
+  "srt": {
+    "port": 9494,
+    "latencyMs": 20
   }
 }

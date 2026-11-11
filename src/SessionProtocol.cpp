@@ -1,78 +1,95 @@
 #include "SessionProtocol.h"
-#include <signal.h>
 using namespace integration;
-SessionProtocol::SessionProtocol(const std::string &checkpoint) : path(checkpoint) {
-    state = {{"watermark", int64_t(0)}, {"seen", Json::array()}, {"desired", ""}, {"recordingId", ""}, {"closed", Json::array()}};
+SessionProtocol::SessionProtocol(const std::string &checkpoint)
+    : path(checkpoint), producerIdentity(processIdentity(getpid())) {
+    state = {{"desired", ""}, {"recordingId", ""}, {"closed", Json::array()}, {"producerIdentity", ""}};
     if (fs::exists(path)) {
-        state = Json::parse(read(path));
-        if (!state.at("watermark").is_number_integer() || !state.at("seen").is_array() ||
-            !state.at("desired").is_string()) throw std::runtime_error("Checkpoint inválido; restaure-o antes de conectar");
+        const auto saved = Json::parse(read(path));
+        // Read only the current fields; existing checkpoints keep their recording IDs.
+        for (auto it = state.begin(); it != state.end(); ++it)
+            if (saved.contains(it.key())) it.value() = saved.at(it.key());
+        if (!state.at("desired").is_string() || !state.at("recordingId").is_string() ||
+            !state.at("producerIdentity").is_string() || !state.at("closed").is_array())
+            throw std::runtime_error("Checkpoint inválido");
+        for (const auto &id : state.at("closed"))
+            if (!id.is_string() || !sessionIdValid(id.get<std::string>())) throw std::runtime_error("Checkpoint inválido");
     }
 }
 SessionEvent SessionProtocol::parse(const std::string &payload) {
     if (payload.size() > 16384) throw std::runtime_error("Evento excede 16 KiB");
-    auto j = Json::parse(payload);
-    if (!j.is_object() || j.size() != 5 || !j.at("v").is_number_integer() || j.at("v") != 1)
-        throw std::runtime_error("Envelope/versão inválido");
+    const auto j = Json::parse(payload);
     SessionEvent e;
-    e.type = j.at("type").get<std::string>(); e.eventId = j.at("eventId").get<std::string>();
-    if (e.type != "sessao.iniciada" && e.type != "sessao.encerrada" && e.type != "sessao.estado")
+    e.type = j.at("tipo").get<std::string>();
+    if (e.type != "sessao.iniciada" && e.type != "sessao.estado" && e.type != "sessao.encerrada")
         throw std::runtime_error("Tipo de evento desconhecido");
-    if (!uuidValid(e.eventId)) throw std::runtime_error("eventId inválido");
-    if (j.at("sessaoId").is_null()) {
-        if (e.type != "sessao.estado") throw std::runtime_error("Sessão obrigatória");
-    } else {
-        e.sessionId = j.at("sessaoId").get<std::string>();
-        if (!uuidValid(e.sessionId)) throw std::runtime_error("sessaoId inválido");
+    if ((e.type != "sessao.encerrada" || j.contains("versao")) &&
+        (!j.at("versao").is_number_integer() || j.at("versao") != 1))
+        throw std::runtime_error("Versão inválida");
+    if (e.type == "sessao.encerrada") e.sessionId = j.at("sessaoId").get<std::string>();
+    else {
+        e.session = j.at("sessao");
+        if (e.session.is_null() && e.type == "sessao.estado") return e;
+        const auto &s = e.session;
+        e.sessionId = s.at("id").get<std::string>();
+        timestamp(s.at("iniciadaEm").get<std::string>());
+        const auto &body = s.at("corpoPresente");
+        if (!body.is_object() || (s.contains("corpoExpandido") &&
+            !s.at("corpoExpandido").is_null() && !s.at("corpoExpandido").is_object()))
+            throw std::runtime_error("Participante inválido");
+        for (const auto *field : {"participanteId", "elemento", "corPrincipal"})
+            if (body.contains(field) && !body.at(field).is_null() && !body.at(field).is_string())
+                throw std::runtime_error("Campo do participante inválido");
+        if (body.contains("paleta") && !body.at("paleta").is_null()) {
+            if (!body.at("paleta").is_array()) throw std::runtime_error("Paleta inválida");
+            for (const auto &color : body.at("paleta"))
+                if (!color.is_string()) throw std::runtime_error("Cor inválida");
+        }
     }
-    e.time = timestamp(j.at("timestamp").get<std::string>());
+    if (!sessionIdValid(e.sessionId)) throw std::runtime_error("sessaoId inválido");
     return e;
 }
-bool SessionProtocol::accept(SessionEvent &e, bool initialSnapshot) {
-    if (initialSnapshot && e.type != "sessao.estado") throw std::runtime_error("Primeiro evento deve ser sessao.estado");
-    for (const auto &id : state["seen"]) if (id == e.eventId) return false;
-    if (e.time < state.at("watermark").get<int64_t>()) return false;
+bool SessionProtocol::accept(SessionEvent &e) {
     auto next = state;
-    const auto process = processIdentity(getpid());
-    if (!next.contains("closed")) next["closed"] = Json::array();
-    bool closed = false;
-    for (const auto &id : next["closed"]) if (id == e.sessionId) closed = true;
-    if (e.type == "sessao.iniciada" && closed) return false;
-    if (e.type == "sessao.encerrada" && !closed) next["closed"].push_back(e.sessionId);
-    if (e.type != "sessao.encerrada" && !e.sessionId.empty()) {
-        auto id = next.value("recordingId", std::string());
-        if (next["desired"] != e.sessionId || !uuidValid(id)) id = uuid();
-        const auto capture = fs::path(path).parent_path() / id / "session.json";
-        e.alreadyRecorded = closed;
-        if (!fs::exists(capture) && fs::exists(capture.parent_path()) && initialSnapshot &&
-            next.value("producerIdentity", "") != process) id = uuid();
-        if (fs::exists(capture)) {
-            const auto local = Json::parse(read(capture));
-            const auto status = local.value("state", "");
-            if (status == "completed" && local.value("stop_reason", "") == "application_exit" &&
-                initialSnapshot && local.value("owner_identity", "") != process && !closed) {
-                id = uuid(); // resume the still-active web session as a separate capture
-            } else if (status == "completed" || status == "error") e.alreadyRecorded = true;
-            else if (initialSnapshot && local.value("owner_identity", "") != process) {
-                if (producerAlive(local))
-                    throw std::runtime_error("Outro processo ainda possui a captura");
-                id = uuid(); // interrupted capture stays quarantined; new segment, never overwrite
+    auto &closed = next["closed"];
+    const auto isClosed = [&](const std::string &id) {
+        return std::find(closed.begin(), closed.end(), id) != closed.end();
+    };
+    if (e.type == "sessao.iniciada" && isClosed(e.sessionId)) return false;
+    if (e.type == "sessao.encerrada") {
+        if (!isClosed(e.sessionId)) closed.push_back(e.sessionId);
+        if (next["desired"] == e.sessionId) next["desired"] = "";
+    } else {
+        if (!e.sessionId.empty()) {
+            auto id = next.at("recordingId").get<std::string>();
+            if (next["desired"] != e.sessionId || !uuidValid(id)) id = uuid();
+            const auto folder = fs::path(path).parent_path() / id;
+            const auto capture = folder / "session.json";
+            if (fs::exists(capture)) {
+                const auto local = Json::parse(read(capture));
+                if (local.value("owner_identity", "") != producerIdentity) {
+                    if (producerAlive(local)) throw std::runtime_error("Outro processo ainda possui a captura");
+                    id = uuid(); // Restart: new capture, preserving every previous segment.
+                } else {
+                    const auto status = local.value("state", "");
+                    e.alreadyRecorded = status == "completed" || status == "error";
+                }
+            } else if (fs::exists(folder) && next["producerIdentity"] != producerIdentity) {
+                id = uuid(); // Crash before session.json was committed.
             }
+            next["recordingId"] = id;
+            next["producerIdentity"] = producerIdentity;
+            e.recordingId = id;
         }
-        next["recordingId"] = id; e.recordingId = id;
+        const auto previous = next.at("desired").get<std::string>();
+        if (e.type == "sessao.estado" && !previous.empty() && previous != e.sessionId && !isClosed(previous))
+            closed.push_back(previous);
+        next["desired"] = e.sessionId;
     }
-    if (e.type == "sessao.estado" && next["desired"] != e.sessionId && next["desired"] != "")
-        next["closed"].push_back(next["desired"]);
-    // A close for another session must not change the authoritative target.
-    if (e.type != "sessao.encerrada") next["desired"] = e.sessionId;
-    else if (next["desired"] == e.sessionId) next["desired"] = "";
-    next["watermark"] = e.time;
-    next["producerIdentity"] = process;
-    next["seen"].push_back(e.eventId);
-    if (next["seen"].size() > 256) next["seen"].erase(next["seen"].begin());
-    fs::create_directories(fs::path(path).parent_path());
-    atomicWrite(path, next.dump(2) + '\n');
-    state = std::move(next);
-
+    // Repeated public/private snapshots and reconnects need no write/fsync.
+    if (next != state) {
+        fs::create_directories(fs::path(path).parent_path());
+        atomicWrite(path, next.dump(2) + '\n');
+        state = std::move(next);
+    }
     return true;
 }

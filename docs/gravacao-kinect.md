@@ -5,13 +5,13 @@ O painel **Gravação Kinect RGB + Depth**, em Controles Gerais, grava a fonte K
 ## Usar
 
 1. Instale/disponibilize FFmpeg com `libx264` no `PATH`. Confira com `ffmpeg -hide_banner -encoders | rg libx264`. `ffprobe` é necessário apenas para validar os arquivos.
-2. Ligue o Kinect no painel Kinect. Ajuste FPS, bitrates e faixa de profundidade no painel de gravação, antes de iniciar.
+2. Ligue o Kinect no painel Kinect. Ajuste `depthClippingNear` e `depthClippingFar` no painel Kinect. Ajuste FPS e bitrates no painel de gravação, antes de iniciar.
 3. Clique **Start Recording Kinect**. O painel informa preparação, gravação, finalização, tempo de vídeo, GB utilizados, descartes/repetições e erros.
 4. Clique **Stop Recording Kinect** e aguarde “Gravação finalizada”. O pedido retorna imediatamente; a finalização dos MP4 acontece em segundo plano. Ao fechar a aplicação, ela aguarda a finalização, com timeout para processos defeituosos.
 
-O arquivo `bin/data/kinect-recording.json` define os valores iniciais. Alterações na interface valem para a próxima sessão e não são persistidas nesse arquivo. O JSON aceita `output_root` (relativo a `bin/data` ou absoluto), `ffmpeg` (executável), `fps` (1–30), `rgb_kbps`, `depth_kbps`, `preset`, `depth_near_mm`, `depth_far_mm`, `segment_seconds` (1–600) e `queue_frames` (2–60). Configuração inválida gera uma mensagem, sem iniciar uma sessão de vídeo. A faixa de gravação é independente dos sliders usados na visualização.
+O arquivo `bin/data/kinect-recording.json` define os valores iniciais. Alterações na interface valem para a próxima sessão e não são persistidas nesse arquivo. O JSON aceita `output_root` (relativo a `bin/data` ou absoluto), `ffmpeg` (executável), `fps` (1–30), `rgb_kbps`, `depth_kbps`, `preset`, `segment_seconds` (1–600) e `queue_frames` (2–60). Configuração inválida gera uma mensagem, sem iniciar uma sessão de vídeo. A gravação manual e a automática copiam a faixa atual dos sliders do Kinect ao iniciar. A escala fica fixa até o fim da gravação e é registrada em `session.json`; alterações nos sliders durante a captura valem para a próxima gravação. As antigas chaves `depth_near_mm` e `depth_far_mm` são ignoradas pelo aplicativo.
 
-Padrões: 30 FPS, 2500 kb/s RGB, 1500 kb/s Depth, `veryfast`, faixa 500–4000 mm, segmentos de 600 s e fila de 8 imagens por canal. Limites da aplicação: 4 horas, 10.000.000.000 bytes e reserva de 128.000.000 bytes para finalização. Não há áudio.
+Padrões: 30 FPS, 2500 kb/s RGB, 1500 kb/s Depth, `veryfast`, faixa inicial do Kinect 500–2000 mm, segmentos de 600 s e fila de 8 imagens por canal. Limites da aplicação: 4 horas, 10.000.000.000 bytes e reserva de 128.000.000 bytes para finalização. Não há áudio.
 
 ```text
 bin/data/recordings/
@@ -31,6 +31,8 @@ bin/data/recordings/
 ```
 
 ## Profundidade e sincronização
+
+Uma faixa menor distribui os níveis de cinza por um intervalo menor de distâncias, aumentando a distinção entre profundidades dentro dele. O vídeo continua sendo de 8 bits e com compressão H.264; profundidades fora da faixa são pretas.
 
 A fonte chama `ofxKinect::setRegistration(true)`. O `threadedFunction()` do addon instalado seleciona `FREENECT_DEPTH_REGISTERED`; sem registro ele selecionaria `FREENECT_DEPTH_MM`. Portanto, **`getRawDepthPixels()` contém milímetros de 16 bits**, apesar do comentário antigo “raw 11 bit values” no cabeçalho. `getDepthPixels()` já é uma visualização de 8 bits dependente do clipping; não é usado como entrada do gravador.
 

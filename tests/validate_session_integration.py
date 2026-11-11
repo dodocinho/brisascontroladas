@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Real POCO sockets, FFmpeg, ffprobe and rsync; isolated HTTP/SSH fixtures, no Kinect."""
-import base64
 import datetime
 import hashlib
 import json
@@ -8,111 +7,14 @@ import os
 from pathlib import Path
 import re
 import shutil
-import socketserver
-import struct
 import subprocess
 import sys
 import tempfile
-import threading
-import time
-import uuid
 
 binary = sys.argv[1]
 base = Path(tempfile.mkdtemp(prefix='brisas-session-'))
 subprocess.run([binary, 'unit', str(base / 'unit')], check=True, timeout=50)
 A = '33333333-3333-4333-8333-333333333333'
-
-def event(kind, session=None):
-    return dict(v=1, type=kind, eventId=str(uuid.uuid4()), sessaoId=session,
-                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'))
-
-def frame(sock, data, opcode=1, fin=True):
-    if isinstance(data, str): data = data.encode()
-    n = len(data)
-    sock.sendall(bytes([opcode | (128 if fin else 0), n if n < 126 else 126]) +
-                 (struct.pack('!H', n) if n >= 126 else b'') + data)
-
-def recv_frame(sock):
-    def exact(n):
-        data = b''
-        while len(data) < n:
-            part = sock.recv(n-len(data))
-            if not part: raise EOFError()
-            data += part
-        return data
-    first, second = exact(2); n = second & 127
-    if n == 126: n = struct.unpack('!H', exact(2))[0]
-    if n == 127: n = struct.unpack('!Q', exact(8))[0]
-    assert second & 128, 'client frames must be masked'
-    mask = exact(4); data = exact(n)
-    return first & 15, bytes(c ^ mask[i % 4] for i, c in enumerate(data))
-
-class Server(socketserver.ThreadingTCPServer):
-    allow_reuse_address = True
-    daemon_threads = True
-    count = 0
-    reject = False
-    pong = False
-    errors = []
-
-class Handler(socketserver.BaseRequestHandler):
-    def handle(self):
-        try:
-            data = b''
-            while b'\r\n\r\n' not in data: data += self.request.recv(4096)
-            lines = data.decode().split('\r\n')
-            headers = dict(line.split(': ', 1) for line in lines[1:] if ': ' in line)
-            assert headers['Authorization'] == 'Bearer test-only-secret'
-            assert lines[0].startswith('GET /api/v1/gravador/ws ')
-            if self.server.reject:
-                self.request.sendall(b'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
-                return
-            self.server.count += 1
-            key = base64.b64encode(hashlib.sha1((headers['Sec-WebSocket-Key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest())
-            self.request.sendall(b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + key + b'\r\n\r\n')
-            if self.server.count == 1:
-                frame(self.request, json.dumps(event('sessao.estado')))
-                start = json.dumps(event('sessao.iniciada', A))
-                frame(self.request, start[:35], fin=False)
-                frame(self.request, b'heartbeat', opcode=9)
-                frame(self.request, start[35:], opcode=0)
-                op, content = recv_frame(self.request)
-                assert op == 10 and content == b'heartbeat'; self.server.pong = True
-                frame(self.request, start)  # duplicate eventId
-                frame(self.request, '{invalid')
-                old = event('sessao.encerrada', A); old['timestamp'] = '2020-01-01T00:00:00Z'
-                frame(self.request, json.dumps(old))
-                time.sleep(.25)
-                return  # abrupt disconnect, no synthetic stop event is allowed
-            frame(self.request, json.dumps(event('sessao.estado', A)))
-            time.sleep(.1)
-            frame(self.request, json.dumps(event('sessao.encerrada', A)))
-            time.sleep(6)
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        except Exception as exc:
-            self.server.errors.append(str(exc))
-
-for reject in (False, True):
-    with Server(('127.0.0.1', 0), Handler) as server:
-        server.reject = reject; server.errors = []
-        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
-        result = subprocess.run([binary, 'ws', str(base / ('auth' if reject else 'ws')),
-            f'ws://127.0.0.1:{server.server_address[1]}/api/v1/gravador/ws', '4'],
-            env=dict(os.environ, BRISAS_GRAVADOR_TOKEN='test-only-secret'), capture_output=True, text=True, timeout=15)
-        assert result.returncode == 0, result.stderr
-        assert 'test-only-secret' not in result.stdout + result.stderr
-        report = json.loads(result.stdout)
-        assert not server.errors, server.errors
-        assert not report['prematurelyStopped'], report
-        if reject:
-            assert not report['events'] and 'Autenticação recusada' in report['status'], report
-        else:
-            assert server.count >= 2 and server.pong
-            assert [e['type'] for e in report['events']] == ['sessao.estado','sessao.iniciada','sessao.estado','sessao.encerrada'], report
-            assert report['events'][1]['recording'] == report['events'][2]['recording']
-        server.shutdown()
-print('PASS real WebSocket Bearer, 401, fragmentation, ping/pong, reconnect, duplicates, invalid/stale events')
 
 tools = base / 'tools'; tools.mkdir()
 remote = base / 'mac'; remote.mkdir()

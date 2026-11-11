@@ -20,7 +20,7 @@ enum class FaseSrt
 class TransmissorSrt
 {
 public:
-    TransmissorSrt() = default;
+    explicit TransmissorSrt(const std::string &pidFile = "/tmp/brisascontroladas-srt.pid") : pidPath(pidFile) {}
     ~TransmissorSrt();
     TransmissorSrt(const TransmissorSrt &) = delete;
     TransmissorSrt &operator=(const TransmissorSrt &) = delete;
@@ -45,6 +45,7 @@ public:
     std::string status() const;
     std::string logRecente() const;
     std::string ultimaMensagem() const;
+    std::string erro() const;
     std::string comando() const;
     int quadrosEnviados() const;
     int numeroTentativas() const { return tentativas; }
@@ -55,6 +56,7 @@ public:
     int portaEmUso() const { return portaAtiva; }
 
 private:
+    const std::string pidPath;
     void abrirProcesso(int largura, int altura);
     void encerrarProcesso();
     void falhaImediata(const std::string &texto);
@@ -67,6 +69,7 @@ private:
     bool houveErro = false;
     bool aceitandoEscrita = false;
     bool ffmpegNoAr = false;
+    bool saidaConfirmada = false; // FFmpeg progress after opening/writing the SRT output
     bool ocupado = false;
     bool temQuadro = false;
     bool reduzida = false;

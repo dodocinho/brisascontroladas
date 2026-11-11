@@ -147,3 +147,5 @@ bin/data/recordings/
 
 # Configuração local (IP, pastas e integração). O modelo versionado é docs/kinect-recording.example.json
 bin/data/kinect-recording.json
+# Shared device credential, kept separate from configuration and recordings.
+bin/data/corpo-expandido.token

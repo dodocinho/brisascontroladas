@@ -291,6 +291,21 @@ void KinectRecorder::Impl::run()
         Json event = {{"startedUtcMs", segmentStartMs}, {"endedUtcMs", endMs},
             {"elapsedMs", (endNs - segmentStartNs) / 1000000}, {"frames", count - segmentFirstFrame},
             {"error", failed || endNs < segmentStartNs || endMs < segmentStartMs}};
+        if (!config.recordingId.empty()) {
+            std::ostringstream number;
+            number << std::setw(3) << std::setfill('0') << index;
+            event["sessaoId"] = config.sessionId;
+            event["gravacaoId"] = config.recordingId;
+            event["participanteId"] = metadata.value("participanteId", Json(nullptr));
+            event["arquivos"] = {{"rgb", config.recordingId + "-rgb" + number.str() + ".mp4"},
+                                 {"depth", config.recordingId + "-depth" + number.str() + ".mp4"}};
+            event["fps"] = config.fps;
+            event["width"] = width; event["height"] = height;
+            event["firstFrame"] = segmentFirstFrame;
+            event["monotonicStartNs"] = segmentStartNs;
+            // This metadata is diagnostic; readiness still requires completed session.json
+            // and successful ffprobe/transfer, never just the presence of this file.
+        }
         const auto path = dir / "capture" / (std::to_string(index) + ".json");
         integration::atomicWrite(path, event.dump(2) + '\n');
         segmentStartMs = 0;
@@ -324,7 +339,7 @@ void KinectRecorder::Impl::run()
         if (projected > c.maxBytes - c.reserveBytes)
             throw std::runtime_error("Bitrates excedem o orçamento de armazenamento para a duração configurada");
         if ((!c.recordingId.empty() || !c.sessionId.empty()) &&
-            (!integration::uuidValid(c.recordingId) || !integration::uuidValid(c.sessionId)))
+            (!integration::uuidValid(c.recordingId) || !integration::sessionIdValid(c.sessionId)))
             throw std::runtime_error("Identidade automática inválida");
         fs::create_directories(c.outputRoot);
         const auto base = fs::absolute(fs::path(c.outputRoot) / (c.recordingId.empty() ? wallTime(true) : c.recordingId));
@@ -366,6 +381,12 @@ void KinectRecorder::Impl::run()
         metadata["owner_identity"] = integration::processIdentity(getpid());
         if (!c.recordingId.empty()) {
             metadata["gravacaoId"] = c.recordingId; metadata["sessaoId"] = c.sessionId;
+            if (!c.sessionMetadata.empty()) {
+                const auto session = Json::parse(c.sessionMetadata);
+                metadata["sessao"] = session;
+                metadata["participanteId"] = session.at("corpoPresente").value("participanteId", Json(nullptr));
+                metadata["sessaoIniciadaEm"] = session.at("iniciadaEm");
+            }
             metadata["mode"] = "automatic";
         } else metadata["mode"] = "manual";
         char hostname[256]{};
@@ -530,6 +551,7 @@ bool KinectRecorder::submitDepthMm(const uint16_t *data, std::size_t count, int6
 KinectRecorder::Status KinectRecorder::status() const
 {
     Status s;
+    s.depthNearMm = impl->config.depthNearMm; s.depthFarMm = impl->config.depthFarMm;
     s.active = impl->active; s.accepting = accepting();
     s.frames = impl->frames; s.seconds = double(s.frames) / std::max(1, impl->config.fps); s.bytes = impl->bytes;
     s.droppedRgb = impl->rgb.rejected + impl->skippedRgb; s.droppedDepth = impl->depth.rejected + impl->skippedDepth;
