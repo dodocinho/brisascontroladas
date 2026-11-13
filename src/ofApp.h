@@ -31,9 +31,7 @@ public:
     shared_ptr<ofAppBaseWindow> window;
     shared_ptr<ofBaseGLRenderer> gl;
 
-    void saveFrame();
     void capturarEnvio();
-    int frameCount = 0;
     ofPixels quadroTransmissao;
     ofPixels quadroCheio;
 };

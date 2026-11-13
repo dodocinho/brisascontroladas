@@ -38,11 +38,6 @@ void ofApp::update()
     }
 
     ofEnableBlendMode(gui->blendMode);
-
-    if (gui->isRecording)
-    {
-        saveFrame();
-    }
 }
 
 //--------------------------------------------------------------
@@ -178,20 +173,4 @@ void ofApp::gotMessage(ofMessage msg)
 //--------------------------------------------------------------
 void ofApp::dragEvent(ofDragInfo dragInfo)
 {
-}
-
-void ofApp::saveFrame()
-{
-    ofPixels pixels;
-    ofImage screenImage;
-    // get current hour and minute
-    time_t t = time(0);
-    struct tm *now = localtime(&t);
-    int hour = now->tm_hour;
-    int min = now->tm_min;
-
-    screenImage.grabScreen(0, 0, ofGetWidth(), ofGetHeight());
-    screenImage.save("recording/" + ofToString(hour) + "_" + ofToString(min) + "_" + "frame_" + ofToString(frameCount) + ".png");
-    gui->setFrameCountRecorded(frameCount);
-    frameCount++;
 }

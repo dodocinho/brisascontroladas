@@ -132,6 +132,12 @@ struct Encoder
             "-segment_list_type", "csv", "-segment_list", (dir / name / "segments.csv").string(),
             (c.recordingId.empty() ? dir / name / (name + "_%03d.mp4") :
                 dir / (c.recordingId + "-" + name + "%03d.mp4")).string()};
+        if (c.mirrorHorizontal || c.mirrorVertical)
+        {
+            const std::string filtro = c.mirrorHorizontal
+                ? (c.mirrorVertical ? "hflip,vflip" : "hflip") : "vflip";
+            args.insert(args.end() - 1, {"-vf", filtro});
+        }
         int pipeFds[2];
         if (pipe2(pipeFds, O_CLOEXEC) != 0) throw std::runtime_error("Falha criando pipe FFmpeg");
         posix_spawn_file_actions_t actions;
@@ -363,6 +369,7 @@ void KinectRecorder::Impl::run()
         metadata = {{"schema_version", 1}, {"started_utc", wallTime()}, {"directory_timezone", "UTC"},
             {"monotonic_epoch_ns", epoch}, {"capture_nominal_fps", 30}, {"width", width}, {"height", height}, {"fps", c.fps},
             {"codec", "libx264"}, {"container", "mp4"}, {"pixel_format", "yuv420p"}, {"preset", c.preset},
+            {"mirror_horizontal", c.mirrorHorizontal}, {"mirror_vertical", c.mirrorVertical},
             {"rgb_kbps", c.rgbKbps}, {"depth_kbps", c.depthKbps}, {"rate_control", "ABR with maxrate=bitrate, VBV=2 seconds"},
             {"segment_seconds", c.segmentSeconds}, {"queue_frames_per_stream", c.queueFrames},
             {"max_bytes", c.maxBytes}, {"reserve_bytes", c.reserveBytes}, {"max_duration_seconds", c.maxDurationSeconds},
@@ -552,6 +559,7 @@ KinectRecorder::Status KinectRecorder::status() const
 {
     Status s;
     s.depthNearMm = impl->config.depthNearMm; s.depthFarMm = impl->config.depthFarMm;
+    s.mirrorHorizontal = impl->config.mirrorHorizontal; s.mirrorVertical = impl->config.mirrorVertical;
     s.active = impl->active; s.accepting = accepting();
     s.frames = impl->frames; s.seconds = double(s.frames) / std::max(1, impl->config.fps); s.bytes = impl->bytes;
     s.droppedRgb = impl->rgb.rejected + impl->skippedRgb; s.droppedDepth = impl->depth.rejected + impl->skippedDepth;

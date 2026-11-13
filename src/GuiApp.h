@@ -42,11 +42,6 @@ public:
     void UIControlesGerais();
     void UIConexaoMac();
     void UIGravacaoKinect();
-    bool isRecording = false;
-    void startRecording();
-    void stopRecording();
-    void setFrameCountRecorded(int frameCount);
-    int framesRecorded = 0;
 
     char ipMac[64] = "192.168.1.4";
     std::string ipMacErro;
@@ -59,6 +54,7 @@ public:
     // Kinect
     int anguloKinect;
     int depthClippingFar, depthClippingNear;
+    bool mirrorKinectHorizontal = false, mirrorKinectVertical = false;
 
     GLuint btnCriaVideo,
         btnCriaPoligono,
@@ -81,7 +77,7 @@ public:
     bool desenhaMiniaturas;
 
 private:
-    void sincronizarClippingGravacao();
+    void sincronizarConfigGravacao();
     KinectRecorder::Config recordingConfig;
     RecordingTransfer recordingTransfer;
     SessionWebSocketClient sessionWebSocket;

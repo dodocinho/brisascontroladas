@@ -189,7 +189,7 @@ struct SessionWebSocketClient::Impl {
                                 endedSession = serverSession; serverSession.clear();
                             }
                             sentRevision = 0; // re-evaluate the latest state against the authoritative session
-                            log("Sincronizado: " + event.type + " sessão=" + (event.sessionId.empty() ? "null" : event.sessionId));
+                            log("Sincronizado: " + event.type + " sessão=" + (event.sessionId.empty() ? "null" : event.sessionId.substr(0, 5)));
                             std::lock_guard<std::mutex> lock(mutex);
                             queue.push_back(std::move(event));
                         }

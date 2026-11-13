@@ -22,6 +22,7 @@ public:
     bool getIsConnected() const;
     void setAngle(int angle);
     void setDepthClipping(int near, int far);
+    void setMirror(bool horizontal, bool vertical);
 
     const ofPixels &getDepthPixels() const { return depthPixels; }
     const ofPixels &getRgbPixels() const { return rgbPixels; }
@@ -48,4 +49,5 @@ private:
     int angulo = 0;
     int cortePerto = 500, corteLonge = 2000;
     bool configuraCamera = true;
+    bool mirrorHorizontal = false, mirrorVertical = false;
 };

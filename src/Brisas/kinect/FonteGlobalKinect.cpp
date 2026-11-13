@@ -40,6 +40,12 @@ void FonteGlobalKinect::setDepthClipping(int near, int far)
     }
 }
 
+void FonteGlobalKinect::setMirror(bool horizontal, bool vertical)
+{
+    mirrorHorizontal = horizontal;
+    mirrorVertical = vertical;
+}
+
 void FonteGlobalKinect::abreCamera()
 {
     if (getIsConnected()) return;
@@ -101,6 +107,7 @@ void FonteGlobalKinect::update()
     const auto receivedNs = KinectRecorder::monotonicNs();
     if (recorder.accepting())
     {
+        // O gravador recebe os originais e aplica o espelho fixado no início da sessão.
         if (kinect->isFrameNewDepth())
         {
             const auto &mm = kinect->getRawDepthPixels();
@@ -115,12 +122,20 @@ void FonteGlobalKinect::update()
     if (kinect->isFrameNewDepth())
     {
         depthPixels = kinect->getDepthPixels();
-        if (depthPixels.isAllocated()) depthTexture.loadData(depthPixels);
+        if (depthPixels.isAllocated())
+        {
+            depthPixels.mirror(mirrorVertical, mirrorHorizontal);
+            depthTexture.loadData(depthPixels);
+        }
     }
     if (kinect->isFrameNewVideo())
     {
         rgbPixels = kinect->getPixels();
-        if (rgbPixels.isAllocated()) rgbTexture.loadData(rgbPixels);
+        if (rgbPixels.isAllocated())
+        {
+            rgbPixels.mirror(mirrorVertical, mirrorHorizontal);
+            rgbTexture.loadData(rgbPixels);
+        }
     }
 }
 
@@ -148,6 +163,7 @@ void FonteGlobalKinect::atualizaDemo()
         {
             depthPixels = demoDepth->getPixels();
             depthPixels.setImageType(OF_IMAGE_GRAYSCALE);
+            depthPixels.mirror(mirrorVertical, mirrorHorizontal);
             depthTexture.loadData(depthPixels);
         }
     }
@@ -158,6 +174,7 @@ void FonteGlobalKinect::atualizaDemo()
         {
             rgbPixels = demoRgb->getPixels();
             rgbPixels.setImageType(OF_IMAGE_COLOR);
+            rgbPixels.mirror(mirrorVertical, mirrorHorizontal);
             rgbTexture.loadData(rgbPixels);
         }
     }

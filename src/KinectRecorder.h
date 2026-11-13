@@ -21,6 +21,7 @@ public:
         int fps = 30;
         int rgbKbps = 2500, depthKbps = 1500;
         int depthNearMm = 500, depthFarMm = 4000;
+        bool mirrorHorizontal = false, mirrorVertical = false;
         int segmentSeconds = 600;
         int queueFrames = 8;
         int maxDurationSeconds = 14400;
@@ -31,6 +32,7 @@ public:
     {
         bool active = false, accepting = false;
         int depthNearMm = 0, depthFarMm = 0; // range captured at start(), also in session.json
+        bool mirrorHorizontal = false, mirrorVertical = false; // fixed for this capture
         double seconds = 0;
         uint64_t bytes = 0, frames = 0;
         uint64_t droppedRgb = 0, droppedDepth = 0;

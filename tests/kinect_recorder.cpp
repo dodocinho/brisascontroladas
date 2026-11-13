@@ -94,6 +94,38 @@ int main(int argc, char **argv)
     assert(status.seconds >= duration && status.seconds < duration + 0.2);
     Json report = {{"normal", status.directory}};
 
+    // An asymmetric image detects swapped axes and verifies RGB/Depth alignment
+    // in the actual encoded files. Each capture must retain its initial settings.
+    for (int orientation = 0; orientation < 4; ++orientation)
+    {
+        auto mirrored = config;
+        const auto name = "mirror_" + std::to_string(orientation);
+        mirrored.outputRoot = (root / name).string();
+        mirrored.maxDurationSeconds = 1;
+        mirrored.mirrorHorizontal = (orientation & 1) != 0;
+        mirrored.mirrorVertical = (orientation & 2) != 0;
+        assert(r.start(mirrored));
+        mirrored.mirrorHorizontal = !mirrored.mirrorHorizontal;
+        mirrored.mirrorVertical = !mirrored.mirrorVertical;
+        waitFor(r, true);
+        assert(r.status().mirrorHorizontal == ((orientation & 1) != 0));
+        assert(r.status().mirrorVertical == ((orientation & 2) != 0));
+        for (int y = 0; y < 480; ++y)
+            for (int x = 0; x < 640; ++x)
+            {
+                const int quadrant = (y >= 240 ? 2 : 0) + (x >= 320 ? 1 : 0);
+                const int i = y * 640 + x;
+                rgb[i * 3] = rgb[i * 3 + 1] = rgb[i * 3 + 2] = 40 + 50 * quadrant;
+                mm[i] = 500 + 1000 * quadrant;
+            }
+        const auto ns = KinectRecorder::monotonicNs();
+        assert(r.submitRgb(rgb.data(), rgb.size(), ns));
+        assert(r.submitDepthMm(mm.data(), mm.size(), ns));
+        waitFor(r, false);
+        assert(r.status().error.empty());
+        report[name] = r.status().directory;
+    }
+
     config.maxDurationSeconds = 1;
     config.outputRoot = (root / "duration").string();
     assert(r.start(config));

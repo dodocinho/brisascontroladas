@@ -1,10 +1,11 @@
 #include "KinectContornosBrisa.h"
 
-KinectContornosBrisa::KinectContornosBrisa()
+KinectContornosBrisa::KinectContornosBrisa(bool contornos, bool espelhoHorizontal)
+    : ligaContornos(contornos)
 {
     setup();
     // Configura a brisa e defini o ícone
-    mirrorHorizontal = mirrorVertical = false;
+    processamento.setMirrorHorizontal(espelhoHorizontal);
     ofSetBackgroundAuto(false);
     minArea = 10;
     maxArea = (640 * 480) / 2; // (kinect_width*kinect_height)/2

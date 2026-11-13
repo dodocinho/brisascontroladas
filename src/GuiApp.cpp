@@ -1,6 +1,7 @@
 #include "GuiApp.h"
 #include <algorithm>
 #include <cctype>
+#include <cfloat>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -204,12 +205,13 @@ void GuiApp::update()
     auto &fonte = FonteGlobalKinect::getInstance();
     fonte.setAngle(anguloKinect);
     fonte.setDepthClipping(depthClippingNear, depthClippingFar);
+    fonte.setMirror(mirrorKinectHorizontal, mirrorKinectVertical);
     for (const auto &event : sessionWebSocket.drain()) {
         sessionController.receive(event);
     }
     if (sessionController.takeCaptureRequest() && !fonte.getIsConnected()) fonte.ligaKinect();
     fonte.update();
-    sincronizarClippingGravacao();
+    sincronizarConfigGravacao();
     sessionController.update(fonte.getRecorder(), recordingConfig, fonte.getIsConnected());
     sessionController.updateStreaming(transmissor, fonte.getIsConnected(), ipMac, portaSrt, latenciaSrtMs);
     if (sessionConfig.enabled && agora >= proximoEstadoSessao) {
@@ -270,6 +272,9 @@ void GuiApp::UIControlesGerais()
 
     if (ImGui::CollapsingHeader("Kinect"))
     {
+        ImGui::Checkbox("Espelho horizontal (RGB + Depth)", &mirrorKinectHorizontal);
+        ImGui::Checkbox("Espelho vertical (RGB + Depth)", &mirrorKinectVertical);
+        ImGui::TextWrapped("Espelho global: afeta a prévia, as camadas e a transmissão ao vivo. Novas gravações usam estes ajustes até o fim.");
         // Botões de liga e desliga do kinect
         if (FonteGlobalKinect::getInstance().getIsConnected())
         {
@@ -321,24 +326,6 @@ void GuiApp::UIControlesGerais()
 
     // Pula uma linha
     ImGui::NewLine();
-
-    // Existing composition PNG capture remains a separate feature.
-    ImGui::Text("Captura PNG da composição");
-    if (isRecording)
-    {
-        ImGui::Text("Recording... %d", framesRecorded);
-        if (ImGui::Button("[STOP]"))
-        {
-            stopRecording();
-        }
-    }
-    else
-    {
-        if (ImGui::Button("[REC]"))
-        {
-            startRecording();
-        }
-    }
 
     ImGui::Separator();
     ImGui::Text("Transmissão SRT");
@@ -468,12 +455,14 @@ void GuiApp::salvarUrlSessao()
     saida << texto;
 }
 
-void GuiApp::sincronizarClippingGravacao()
+void GuiApp::sincronizarConfigGravacao()
 {
     // Keep the same normalization as FonteGlobalKinect::setDepthClipping.
     // start() snapshots this config; an ongoing recording keeps its own scale.
     recordingConfig.depthNearMm = std::max(0, depthClippingNear);
     recordingConfig.depthFarMm = std::max(recordingConfig.depthNearMm + 1, depthClippingFar);
+    recordingConfig.mirrorHorizontal = mirrorKinectHorizontal;
+    recordingConfig.mirrorVertical = mirrorKinectVertical;
 }
 
 void GuiApp::UIGravacaoKinect()
@@ -485,7 +474,7 @@ void GuiApp::UIGravacaoKinect()
     const auto transfer = recordingTransfer.status();
     const bool conectado = source.getIsConnected();
     // Sliders may have changed in this draw, after the automatic-session update.
-    sincronizarClippingGravacao();
+    sincronizarConfigGravacao();
 
     ImGui::Text("Kinect: %s", conectado ? "conectado" : "desconectado");
     ImGui::Text("Modo: %s", sessionController.isAutomatic() ? "automático / Corpo Expandido" : "manual");
@@ -540,6 +529,9 @@ void GuiApp::UIGravacaoKinect()
             ImGui::Text("FPS %d | RGB %d kb/s | Depth %d kb/s",
                         recordingConfig.fps, recordingConfig.rgbKbps, recordingConfig.depthKbps);
             ImGui::Text("Profundidade gravada: %d a %d mm", state.depthNearMm, state.depthFarMm);
+            ImGui::Text("Espelho gravado: horizontal %s | vertical %s",
+                        state.mirrorHorizontal ? "ligado" : "desligado",
+                        state.mirrorVertical ? "ligado" : "desligado");
         }
         else if (recordingConfigError.empty())
         {
@@ -548,7 +540,7 @@ void GuiApp::UIGravacaoKinect()
             ImGui::InputInt("Depth kb/s", &recordingConfig.depthKbps);
             ImGui::Text("Profundidade do Kinect: %d a %d mm", recordingConfig.depthNearMm, recordingConfig.depthFarMm);
         }
-        ImGui::TextWrapped("A gravação usa o clipping do Kinect no início. Ajustes durante a gravação valem para a próxima.");
+        ImGui::TextWrapped("A gravação usa o clipping e o espelho global do Kinect no início. Ajustes durante a gravação valem para a próxima.");
         ImGui::Text("Descartados RGB/Depth: %llu / %llu",
                     static_cast<unsigned long long>(state.droppedRgb),
                     static_cast<unsigned long long>(state.droppedDepth));
@@ -641,53 +633,47 @@ void GuiApp::desenhaPreviaEFontesKinect()
     desenhaFonte(fonte.getDepthTexture(), depthY, "Kinect profundidade");
 }
 
-void GuiApp::setFrameCountRecorded(int frameCount)
-{
-    this->framesRecorded = frameCount;
-}
-
-void GuiApp::startRecording()
-{
-    isRecording = true;
-    framesRecorded = 0;
-}
-
-void GuiApp::stopRecording()
-{
-    isRecording = false;
-}
-
 void GuiApp::adicionaBrisa()
 {
 
-    ImGui::SetNextWindowSize(ofVec2f(570, 340), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ofVec2f(702, 400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(702, 400), ImVec2(FLT_MAX, FLT_MAX));
     ImGui::SetNextWindowPos(ofVec2f(170, 2), ImGuiCond_FirstUseEver);
     ImGui::Begin("Adicione uma camada de brisa:");
-    bool criaColunas = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaColunas, ImVec2(120, 90));
-    ImGui::SameLine();
-    bool criaKinect = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaKinect, ImVec2(120, 90));
-    ImGui::SameLine();
-    bool criaKinectCam = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaKinectCam, ImVec2(120, 90));
-    ImGui::SameLine();
-    bool criaMatriz = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaMatriz, ImVec2(120, 90));
-    ImGui::SameLine();
-    bool criaSombras = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaSombras, ImVec2(120, 90));
+    const auto botaoCamada = [](const char *nome, GLuint textura)
+    {
+        ImGui::PushID(nome);
+        ImGui::BeginGroup();
+        const bool clicado = ImGui::ImageButton((ImTextureID)(uintptr_t)textura, ImVec2(120, 90));
+        ImGui::TextUnformatted(nome);
+        ImGui::EndGroup();
+        ImGui::PopID();
+        return clicado;
+    };
 
-    bool criaGif = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaGif, ImVec2(120, 90));
+    bool criaKinectSemContorno = botaoCamada("Kinect sem contorno", btnCriaKinect);
     ImGui::SameLine();
-    bool criaImg = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaImg, ImVec2(120, 90));
+    bool criaKinect = botaoCamada("Kinect com contorno", btnCriaKinect);
     ImGui::SameLine();
-    bool criaPoligono = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaPoligono, ImVec2(120, 90));
-    ImGui::SameLine();
-    bool criaVideo = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaVideo, ImVec2(120, 90));
+    bool criaKinectCam = botaoCamada("Câmera RGB", btnCriaKinectCam);
 
-    bool criaCamera = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaCamera, ImVec2(120, 90));
-    // ImGui::SameLine();
-    // bool criaFinder = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaFinder, ImVec2(120, 90));
-    // ImGui::SameLine();
-    // bool criaBody = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaBody, ImVec2(120, 90));
-    //    bool criaMandala = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaMandala, ImVec2(120, 90)); ImGui::SameLine();
-    //    bool criaBorda = ImGui::ImageButton((ImTextureID)(uintptr_t)btnCriaBorda, ImVec2(120, 90));
+    bool criaColunas = botaoCamada("Matriz 1", btnCriaColunas);
+    ImGui::SameLine();
+    bool criaMatriz = botaoCamada("Matriz 2", btnCriaMatriz);
+    ImGui::SameLine();
+    bool criaSombras = botaoCamada("Sombras", btnCriaSombras);
+    ImGui::SameLine();
+    ImGui::Dummy(ImVec2(120 + 2 * ImGui::GetStyle().FramePadding.x, 90));
+    ImGui::SameLine();
+    bool criaCamera = botaoCamada("Câmera vídeo", btnCriaCamera);
+
+    bool criaGif = botaoCamada("GIF", btnCriaGif);
+    ImGui::SameLine();
+    bool criaImg = botaoCamada("Img", btnCriaImg);
+    ImGui::SameLine();
+    bool criaPoligono = botaoCamada("Polígono", btnCriaPoligono);
+    ImGui::SameLine();
+    bool criaVideo = botaoCamada("Vídeo", btnCriaVideo);
 
     if (criaColunas)
     {
@@ -703,6 +689,10 @@ void GuiApp::adicionaBrisa()
     {
         cout << "btn pressionado: criaPoligono";
         registraBrisa(std::make_unique<PoligonoBrisa>(coresPaleta));
+    }
+    if (criaKinectSemContorno)
+    {
+        registraBrisa(std::make_unique<KinectContornosBrisa>(false, true));
     }
     if (criaKinect)
     {

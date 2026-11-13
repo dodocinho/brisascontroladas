@@ -15,6 +15,7 @@ public:
     void drawControles();
     const ofTexture *texturaPronta() const { return textura.isAllocated() ? &textura : nullptr; }
     void setBlur(int valor) { blur = valor; }
+    void setMirrorHorizontal(bool valor) { mirrorHorizontal = valor; }
     const ofPixels &getPixels() const { return resultado; }
 
 private:

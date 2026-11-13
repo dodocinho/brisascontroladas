@@ -1,6 +1,6 @@
 # Gravação RGB + Depth do Kinect
 
-O painel **Gravação Kinect RGB + Depth**, em Controles Gerais, grava a fonte Kinect em dois vídeos H.264/MP4, 640×480. Ele é independente da captura PNG da composição e da transmissão SRT. Os vídeos de demonstração não são usados para gravar profundidade.
+O painel **Gravação Kinect RGB + Depth**, em Controles Gerais, grava a fonte Kinect em dois vídeos H.264/MP4, 640×480. Ele é independente da transmissão SRT. Os vídeos de demonstração não são usados para gravar profundidade.
 
 ## Usar
 
@@ -10,6 +10,10 @@ O painel **Gravação Kinect RGB + Depth**, em Controles Gerais, grava a fonte K
 4. Clique **Stop Recording Kinect** e aguarde “Gravação finalizada”. O pedido retorna imediatamente; a finalização dos MP4 acontece em segundo plano. Ao fechar a aplicação, ela aguarda a finalização, com timeout para processos defeituosos.
 
 O arquivo `bin/data/kinect-recording.json` define os valores iniciais. Alterações na interface valem para a próxima sessão e não são persistidas nesse arquivo. O JSON aceita `output_root` (relativo a `bin/data` ou absoluto), `ffmpeg` (executável), `fps` (1–30), `rgb_kbps`, `depth_kbps`, `preset`, `segment_seconds` (1–600) e `queue_frames` (2–60). Configuração inválida gera uma mensagem, sem iniciar uma sessão de vídeo. A gravação manual e a automática copiam a faixa atual dos sliders do Kinect ao iniciar. A escala fica fixa até o fim da gravação e é registrada em `session.json`; alterações nos sliders durante a captura valem para a próxima gravação. As antigas chaves `depth_near_mm` e `depth_far_mm` são ignoradas pelo aplicativo.
+
+Em **Controles Gerais → Kinect**, os controles **Espelho horizontal (RGB + Depth)** e **Espelho vertical (RGB + Depth)** ajustam a orientação dos dois canais juntos. Ambos começam desligados e podem ser combinados. A prévia global, as camadas e a transmissão SRT da composição acompanham o ajuste ao vivo. Os espelhos individuais de cada camada continuam sendo aplicados sobre essa imagem global; dois espelhos no mesmo eixo se cancelam.
+
+Cada gravação manual ou automática fixa a orientação global no início e a aplica aos vídeos RGB e Depth. Mudanças durante uma gravação valem para a próxima, sem inverter um vídeo em andamento. `session.json` registra `mirror_horizontal` e `mirror_vertical`, e o painel **Mais informações** mostra a orientação da gravação atual. Estes ajustes não são persistidos ao fechar o aplicativo.
 
 Padrões: 30 FPS, 2500 kb/s RGB, 1500 kb/s Depth, `veryfast`, faixa inicial do Kinect 500–2000 mm, segmentos de 600 s e fila de 8 imagens por canal. Limites da aplicação: 4 horas, 10.000.000.000 bytes e reserva de 128.000.000 bytes para finalização. Não há áudio.
 

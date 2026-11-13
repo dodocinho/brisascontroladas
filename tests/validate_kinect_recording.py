@@ -73,6 +73,27 @@ if __name__ == '__main__':
                 print(f'OK: completed segments survive encoder crash: {path}')
             else:
                 validate(path)
+                if name.startswith('mirror_'):
+                    orientation = int(name.removeprefix('mirror_'))
+                    session = json.loads((Path(path) / 'session.json').read_text())
+                    assert session['mirror_horizontal'] == bool(orientation & 1)
+                    assert session['mirror_vertical'] == bool(orientation & 2)
+                    for stream in ('rgb', 'depth'):
+                        video = Path(path) / stream / f'{stream}_000.mp4'
+                        decoded = subprocess.check_output([
+                            'ffmpeg', '-v', 'error', '-i', str(video), '-ss', '0.5',
+                            '-frames:v', '1', '-pix_fmt', 'rgb24' if stream == 'rgb' else 'gray',
+                            '-f', 'rawvideo', '-'])
+                        channels = 3 if stream == 'rgb' else 1
+                        assert len(decoded) == 640 * 480 * channels
+                        for quadrant, (x, y) in enumerate(((160, 120), (480, 120), (160, 360), (480, 360))):
+                            source = quadrant ^ orientation
+                            expected = (40 + 50 * source if stream == 'rgb'
+                                        else 1 + 254 * (3500 - 1000 * source) // 3500)
+                            for channel in range(channels):
+                                actual = decoded[(y * 640 + x) * channels + channel]
+                                assert abs(actual - expected) <= 4, (name, stream, quadrant, actual, expected)
+                    print(f'OK: {name}: RGB/Depth orientation and capture settings preserved')
         # Check the known synthetic depth bands after lossy encode/decode.
         depth_file = Path(report['normal']) / 'depth' / 'depth_001.mp4'
         gray = subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(depth_file), '-frames:v', '1',

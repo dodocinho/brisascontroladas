@@ -4,7 +4,7 @@ class KinectContornosBrisa : public Brisa
 {
 
 public:
-    KinectContornosBrisa();
+    explicit KinectContornosBrisa(bool contornos = true, bool espelhoHorizontal = false);
     void draw();
     const ofTexture *previaAmpliada() const override;
     void update(float dt);
@@ -14,7 +14,6 @@ public:
     float nivelFade = 20;
     bool ligaContornos = true;
     bool bFindHoles = false;
-    bool mirrorHorizontal, mirrorVertical;
     int minArea, maxArea, blobsConsiderados;
     ofxCvContourFinder contourFinder;
     ofxCvGrayscaleImage grayImage;

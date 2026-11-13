@@ -46,18 +46,18 @@ public:
     void update(KinectRecorder &recorder, const KinectRecorder::Config &base, bool connected) {
         const auto s = recorder.status();
         if (automatic && !s.active) {
-            message = s.error.empty() ? "Captura automática finalizada: " + activeSession : "Erro na captura automática: " + s.error;
+            message = s.error.empty() ? "Captura automática finalizada: " + activeSession.substr(0, 5) : "Erro na captura automática: " + s.error;
             automatic = false; activeSession.clear();
         }
         if (automatic && targetSession != activeSession) {
-            recorder.stop("session_transition"); message = "Finalizando sessão " + activeSession; return;
+            recorder.stop("session_transition"); message = "Finalizando sessão " + activeSession.substr(0, 5); return;
         }
         if (s.active) {
             if (!automatic && !targetSession.empty()) message = "Sessão aguardando: gravação manual em andamento";
             return;
         }
         if (targetSession.empty() || attemptedSession == targetSession) return;
-        if (!connected) { message = "Sessão aguardando conexão do Kinect: " + targetSession; return; }
+        if (!connected) { message = "Sessão aguardando conexão do Kinect: " + targetSession.substr(0, 5); return; }
         auto config = base;
         config.sessionId = targetSession; config.recordingId = targetId;
         config.sessionMetadata = targetMetadata.is_null() ? "" : targetMetadata.dump();
@@ -66,7 +66,7 @@ public:
         attemptedSession = targetSession;
         if (recorder.start(config)) {
             automatic = true; activeSession = targetSession;
-            message = "Automática: sessão=" + activeSession + " gravação=" + targetId;
+            message = "Automática: sessão=" + activeSession.substr(0, 5) + " gravação=" + targetId;
             std::clog << "[SessionRecording] " << message << '\n';
         } else message = "Falha iniciando gravação automática";
     }
