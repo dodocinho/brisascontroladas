@@ -16,6 +16,7 @@ public:
     const ofTexture *texturaPronta() const { return textura.isAllocated() ? &textura : nullptr; }
     void setBlur(int valor) { blur = valor; }
     void setMirrorHorizontal(bool valor) { mirrorHorizontal = valor; }
+    void setBrightnessContrast(float brilho, float contraste) { this->brilho = brilho; this->contraste = contraste; }
     const ofPixels &getPixels() const { return resultado; }
 
 private:

@@ -54,7 +54,7 @@ public:
     // Kinect
     int anguloKinect;
     int depthClippingFar, depthClippingNear;
-    bool mirrorKinectHorizontal = false, mirrorKinectVertical = false;
+    bool mirrorKinectHorizontal = true, mirrorKinectVertical = false;
 
     GLuint btnCriaVideo,
         btnCriaPoligono,

@@ -6,6 +6,7 @@ KinectContornosBrisa::KinectContornosBrisa(bool contornos, bool espelhoHorizonta
     setup();
     // Configura a brisa e defini o ícone
     processamento.setMirrorHorizontal(espelhoHorizontal);
+    if (!contornos) processamento.setBrightnessContrast(0.0f, 0.0f);
     ofSetBackgroundAuto(false);
     minArea = 10;
     maxArea = (640 * 480) / 2; // (kinect_width*kinect_height)/2

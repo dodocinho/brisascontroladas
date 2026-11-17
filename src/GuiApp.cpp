@@ -692,7 +692,7 @@ void GuiApp::adicionaBrisa()
     }
     if (criaKinectSemContorno)
     {
-        registraBrisa(std::make_unique<KinectContornosBrisa>(false, true));
+        registraBrisa(std::make_unique<KinectContornosBrisa>(false, false));
     }
     if (criaKinect)
     {

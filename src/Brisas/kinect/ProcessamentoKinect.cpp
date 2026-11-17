@@ -41,7 +41,8 @@ bool ProcessamentoKinect::processa(const ofPixels &pixels)
     if (mirrorHorizontal || mirrorVertical)
         cv::flip(imagem, imagem, mirrorHorizontal && mirrorVertical ? -1 : (mirrorHorizontal ? 1 : 0));
 
-    if (canal == Canal::Profundidade)
+    // Em zero, preserva os pixels: brightnessContrast(0, 0) ainda altera alguns tons.
+    if (canal == Canal::Profundidade && (brilho != 0.0f || contraste != 0.0f))
     {
         grayImage.setFromPixels(resultado);
         grayImage.brightnessContrast(brilho, contraste);
